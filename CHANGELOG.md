@@ -3,6 +3,37 @@
 All notable changes to **video-autopilot-kit** are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.1] — 2026-06-20
+
+Hardening + reach. Makes the v0.3.0 QA layer robust on Windows/CJK setups, adds
+letterbox detection to the one-shot QA, and ships a new vertical-Shorts pipeline.
+
+### Added
+- **`detect_dead_borders(video)`** (M92) — `cropdetect` flags non-full-frame footage that
+  was left with dead **letterbox/pillarbox** bars (i.e. a screenshot dropped in without the
+  blurred-fill background). Wired into `final_delivery_qa` → `rep['border_flag']` + a
+  `M92 border` line in the report, so the same QA pass that catches flash/dead-air now also
+  catches un-filled bars. Pairs with `still_blurfill` (the fix).
+- **`silent_vlog_maker/shorts_vertical.py`** (M96) — pure-ffmpeg vertical (9:16 1080×1920)
+  food/travel Shorts pipeline: `normalize_to_portrait` (phone .MOV → upright 9:16, handles
+  mixed −90/+90 rotation via autorotate), `build_multicolor_ass` (per-word multi-color
+  emphasis captions, auto emoji-strip), `extract_gps` (read clip GPS for address lookup),
+  `build_one_short` (silent footage + multi-color captions + BGM-as-lead-audio). Exported
+  from `silent_vlog_maker`.
+
+### Fixed
+- **Windows cp950 crash on CJK paths** — `_run()` now forces `text=True, encoding="utf-8",
+  errors="replace"` so ffmpeg/ffprobe stderr with Chinese paths no longer raises mid-QA.
+- **Scientific-notation-safe ffmpeg parsers** — `silencedetect` / `blackdetect` (and the new
+  `cropdetect`) timestamp regexes accept `1.2e-05`-style values (`[\d.eE+-]+`); previously a
+  sci-notation timestamp silently fell through to a false `[OK]`.
+- **`delivery_qa` self-test** (`python delivery_qa.py`) — regression-guards
+  `build_keep_ranges` / `remap_time` / `trim_dead_air_ranges` + the sci-notation black-ts,
+  silence, and cropdetect parsers. `shorts_vertical.py` ships its own ASS/emoji-strip self-test.
+- **`COLOR_VARIETY` name-clash** — `silent_vlog_maker.COLOR_VARIETY` stays the constants
+  7-color named palette; the vertical-Shorts BGR ASS map is reached via
+  `from silent_vlog_maker.shorts_vertical import COLOR_VARIETY` (no package-level shadow).
+
 ## [0.3.0] — 2026-06-16
 
 Ship-ready QA layer (canon M91–M95). New module `capcut_helpers/delivery_qa.py` —

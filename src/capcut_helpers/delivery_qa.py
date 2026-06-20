@@ -13,7 +13,9 @@
 import subprocess, re, os
 
 def _run(args):
-    return subprocess.run([str(a) for a in args], capture_output=True, text=True)
+    # encoding utf-8 + errors=replace：避免 Windows cp950 對中文路徑/輸出 crash
+    return subprocess.run([str(a) for a in args], capture_output=True,
+                          text=True, encoding="utf-8", errors="replace")
 
 def _probe_dur(media):
     r = _run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
@@ -46,7 +48,7 @@ def detect_long_pauses(audio, min_sec=1.5, noise_db=-30, ignore_edge=1.2):
               f'silencedetect=noise={noise_db}dB:d=0.5', '-f', 'null', '-'])
     out, cur = [], None
     for m in re.finditer(
-            r'silence_(start|end): ([\d.]+)(?: \| silence_duration: ([\d.]+))?', r.stderr):
+            r'silence_(start|end): ([\d.eE+-]+)(?: \| silence_duration: ([\d.eE+-]+))?', r.stderr):
         kind, val, dur = m.group(1), float(m.group(2)), m.group(3)
         if kind == 'start':
             cur = val
@@ -113,7 +115,29 @@ def detect_flash(video, pic_th=0.90, d=0.05):
               f'blackdetect=d={d}:pic_th={pic_th}', '-an', '-f', 'null', '-'])
     return [(float(m.group(1)), float(m.group(2)), float(m.group(3)))
             for m in re.finditer(
-                r'black_start:([\d.]+) black_end:([\d.]+) black_duration:([\d.]+)', r.stderr)]
+                r'black_start:([\d.eE+-]+) black_end:([\d.eE+-]+) black_duration:([\d.eE+-]+)', r.stderr)]
+
+# ------------------------------------------------------------ M92 死黑邊（letterbox）
+def _probe_wh(video):
+    r = _run(['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries',
+              'stream=width,height', '-of', 'csv=p=0:s=x', video])
+    w, h = r.stdout.strip().split('x')
+    return int(w), int(h)
+
+def detect_dead_borders(video, tol=4, frames=300):
+    """M92：cropdetect 抓「非滿版留死黑邊」(letterbox/pillarbox — 非滿版圖沒做模糊填底就會這樣)。
+    回 dict：{'full':(W,H), 'content':(w,h,x,y) or None, 'border_flag':bool, 'note':...}。
+    border_flag=True 代表內容沒鋪滿、四周有黑邊 → 該段該用 still_blurfill 模糊填底。"""
+    W, H = _probe_wh(video)
+    r = _run(['ffmpeg', '-i', video, '-vf', 'cropdetect=24:2:0', '-frames:v', str(frames),
+              '-an', '-f', 'null', '-'])
+    crops = re.findall(r'crop=(\d+):(\d+):(\d+):(\d+)', r.stderr)
+    if not crops:
+        return {'full': (W, H), 'content': None, 'border_flag': False, 'note': 'cropdetect 無輸出'}
+    cw, ch, cx, cy = (int(v) for v in crops[-1])  # 收斂後的最終建議
+    flag = (W - cw) > tol or (H - ch) > tol
+    return {'full': (W, H), 'content': (cw, ch, cx, cy), 'border_flag': flag,
+            'note': f'死黑邊 {W-cw}px(寬)/{H-ch}px(高) → 該段需 still_blurfill 模糊填底' if flag else '滿版無黑邊'}
 
 # ---------------------------------------------------------------- 接觸表
 def contact_sheet(video, out_png, every=6.0, cols=6, cell_w=440, cell_h=248):
@@ -151,6 +175,10 @@ def final_delivery_qa(video, voice=None, contact_out=None):
     rep['flash_segments'] = flashes
     # 頻閃 = >=2 段 black 或有 <1s 的短段（反覆閃）；0 段 = 乾淨
     rep['flash_flag'] = len(flashes) >= 2 or any(f[2] < 1.0 for f in flashes)
+    # M92 死黑邊（非滿版沒模糊填底 → letterbox）
+    borders = detect_dead_borders(video)
+    rep['dead_border'] = borders
+    rep['border_flag'] = borders['border_flag']
     if voice:
         rep['long_pauses'] = detect_long_pauses(voice)
         rep['deadair_flag'] = len(rep['long_pauses']) > 0
@@ -161,9 +189,32 @@ def final_delivery_qa(video, voice=None, contact_out=None):
     # cp950 console 不能印 emoji → runtime 輸出一律 ASCII marker（canon 文件才用 emoji）
     print(f"[QA] final_delivery_qa: {rep['video']} | {rep['duration']}s")
     print('  M93 flash :', '[WARN] suspect flash ' + str(flashes) if rep['flash_flag'] else '[OK] none')
+    print('  M92 border:', '[WARN] ' + borders['note'] if rep['border_flag'] else '[OK] 滿版無黑邊')
     if voice:
         print('  M95 deadair(>1.5s):', '[WARN] ' + str(rep['long_pauses']) if rep['deadair_flag'] else '[OK] none')
     if contact_out:
         print('  contact_sheet ->', contact_out)
     print('  Note: 人工逐格看接觸表 — M91 chrome/隱私 / M92 圖片排版 / M94 真實 artifact / M68 字幕(逗號/停頓/對位)')
     return rep
+
+
+# ── self-test (regression guard，rank5 強化) — `python delivery_qa.py` ──
+if __name__ == "__main__":
+    cuts = [(10.0, 15.0), (30.0, 33.0)]
+    assert build_keep_ranges(cuts, 40) == [(0, 10.0), (15.0, 30.0), (33.0, 40)]
+    assert remap_time(5, cuts) == 5            # 在第一個 cut 之前 → 不動
+    assert remap_time(20, cuts) == 15          # 過第一 cut → -5
+    assert remap_time(35, cuts) == 27          # 過兩 cut → -8
+    assert trim_dead_air_ranges([(22.5, 26.3, 3.8)], keep=0.5) == [(23.0, 26.3)]
+    import re as _re
+    fp = _re.compile(r"black_start:([\d.eE+-]+) black_end:([\d.eE+-]+) black_duration:([\d.eE+-]+)")
+    assert fp.search("black_start:1.2e-05 black_end:0.4 black_duration:0.39"), "科學記號 black ts 漏判"
+    assert fp.search("black_start:68 black_end:74 black_duration:6"), "整數 ts 漏判"
+    sp = _re.compile(r"silence_(start|end): ([\d.eE+-]+)(?: \| silence_duration: ([\d.eE+-]+))?")
+    assert sp.search("silence_end: 26.28 | silence_duration: 3.75"), "silence parse 漏判"
+    # M92 死黑邊 cropdetect 解析 + flag 邏輯（不跑 ffmpeg，純驗 parse + threshold）
+    cp = _re.findall(r"crop=(\d+):(\d+):(\d+):(\d+)", "x crop=1920:1036:0:22 y crop=1920:1036:0:22")
+    assert cp and cp[-1] == ('1920', '1036', '0', '22'), "cropdetect 解析漏判"
+    _cw, _ch = 1920, 1036
+    assert (1920 - _cw) <= 4 and (1080 - _ch) > 4, "死黑邊 threshold 邏輯錯（高度該判有黑邊）"
+    print("[delivery_qa selftest] OK")
