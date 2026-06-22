@@ -3,6 +3,33 @@
 All notable changes to **video-autopilot-kit** are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.3] — 2026-06-23
+
+Music intelligence for vertical Shorts — auto-pick the right track, start it at the
+hook, and keep the volume even. Distilled from cutting a batch of food/travel Shorts
+where ambient picks felt flat and dynamic tracks swung loud→quiet.
+
+### Added
+- **`find_music_highlight(bgm, dur)`** — Shorts BGM shouldn't start at the (boring) intro.
+  Uses `ebur128` short-term loudness (S) as an energy proxy and returns the start second of
+  the most energetic `dur`-length window, so the whole Short rides the chorus/drop. Wired
+  into `build_one_short(bgm_start='auto')` (default). Note: do NOT add `metadata=1` to
+  ebur128 — it suppresses the per-frame `t:/S:` lines this parses.
+- **`beat_rate(bgm)`** — rhythmic-density proxy (ebur128 momentary-loudness peak count per
+  second). Ambient tracks ~1/s, upbeat/quick-cut/vocal-chop ~2.5–3/s. Use to tell energetic
+  tracks from mood pieces by measurement, not by filename guessing.
+- **`pick_bgm(candidates, dur, prefer='energetic')`** — automatic track selection: from a
+  list of same-theme tracks, pick the one that is **long enough (no loop)** AND **most
+  energetic (highest beat_rate)**. `prefer='chill'` flips it for relaxed footage.
+
+### Fixed
+- **BGM volume "swings loud→quiet"** — `build_one_short` now compresses the BGM with
+  `acompressor` so the chorus/breakdown dynamics even out (peaks pulled toward the quiet
+  parts) while per-beat transients survive. `dynaudnorm`/`loudnorm` do NOT fix this
+  (measured); a compressor does (≈8→4 dB loudness swing).
+- **Short-track loop seam** — `build_one_short` warns when the BGM is shorter than the video
+  (the `-stream_loop` seam jumps audibly = another "swing" source); use `pick_bgm` to avoid it.
+
 ## [0.3.2] — 2026-06-22
 
 Patch: two Windows integration bugs in the v0.3.1 code that the string-only self-tests

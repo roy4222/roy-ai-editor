@@ -151,7 +151,7 @@ from .shorts_template import (
 # 🆕 v0.3.1 (2026-06-20) M96: 美食/旅遊直式 Shorts 純 ffmpeg pipeline（多色重點字幕 + 轉正 + GPS）
 from .shorts_vertical import (
     build_one_short, normalize_to_portrait, build_multicolor_ass,
-    strip_emoji, extract_gps,
+    strip_emoji, extract_gps, find_music_highlight, beat_rate, pick_bgm,
 )
 # 註：shorts_vertical 內另有同名 COLOR_VARIETY (g/o/r/w/y BGR ASS 碼)，但 package-level
 # COLOR_VARIETY 保留給 constants 的 7 色命名 palette（避免 shadow）；要 ASS 碼用
@@ -206,5 +206,5 @@ __all__ = [
     "HOOK_FORMULAS", "suggest_hook",
     # 🆕 v0.3.1 M96 直式 Shorts pipeline（COLOR_VARIETY 不在此 export — 避與 constants shadow）
     "build_one_short", "normalize_to_portrait", "build_multicolor_ass",
-    "strip_emoji", "extract_gps",
+    "strip_emoji", "extract_gps", "find_music_highlight", "beat_rate", "pick_bgm",
 ]

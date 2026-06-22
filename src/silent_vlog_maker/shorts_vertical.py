@@ -107,9 +107,73 @@ def extract_gps(clip):
 _NORMV = ('scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,'
           'setsar=1,fps=30,format=yuv420p')
 
-def build_one_short(segs, caps, bgm, out, vol=0.42, fade=1.2):
+# ── BGM 高光偵測：Shorts BGM 不從頭播（前奏無聊）→ 落在副歌/drop ──
+def find_music_highlight(bgm, dur, pre=0.0):
+    """回 BGM「高光時刻」起始秒數：整支 Short 騎在歌最 energetic 的 dur 秒窗上。
+    用 ebur128 短期響度 S(3s 滑動 LUFS) 當 energy proxy，找平均最大的 dur 秒窗。
+    pre=讓 drop 晚 pre 秒進(預設 0=高光從頭就到)。歌比短片短就回 0(反正會 loop)。"""
+    total = _probe_dur(bgm)
+    if total <= dur + 0.5:
+        return 0.0
+    # 注意：ebur128 的逐幀 t:/S: 行印在 stderr；加 metadata=1 反而會「關掉」這些行(踩過) → 不要加
+    r = _run(['ffmpeg', '-hide_banner', '-i', bgm, '-af', 'ebur128', '-f', 'null', '-'])
+    pts = []
+    for line in r.stderr.splitlines():
+        mt = re.search(r't:\s*([\d.]+)', line)
+        ms = re.search(r'S:\s*(-?[\d.]+|-?inf)', line)
+        if mt and ms:
+            s = ms.group(1)
+            pts.append((float(mt.group(1)), -120.0 if 'inf' in s else float(s)))
+    if len(pts) < 5:
+        return 0.0
+    best_t, best_e = 0.0, -1e9
+    for i, (t0, _) in enumerate(pts):
+        if t0 + dur > total + 0.01:
+            break
+        seg = [s for (t, s) in pts[i:] if t <= t0 + dur]
+        if seg:
+            e = sum(seg) / len(seg)
+            if e > best_e:
+                best_e, best_t = e, t0
+    return round(max(0.0, best_t - pre), 2)
+
+# ── 音效自動篩選：量 beat 挑動感曲 + 夠長不 loop ──
+def beat_rate(bgm):
+    """每秒「響度脈衝峰」數 = 節奏密度 proxy。beat 越高越動感(挑曲/相對比較用)。
+    ebur128 momentary(M) 局部峰計數。氛圍慢曲~1/s，動感快剪/Vocal Chop~2.5-3/s。"""
+    r = _run(['ffmpeg', '-hide_banner', '-i', bgm, '-af', 'ebur128', '-f', 'null', '-'])
+    M = []
+    for line in r.stderr.splitlines():
+        m = re.search(r'M:\s*(-?[\d.]+|-?inf)', line)
+        if m:
+            v = m.group(1); M.append(-70.0 if 'inf' in v else float(v))
+    if len(M) < 10:
+        return 0.0
+    peaks = sum(1 for i in range(1, len(M) - 1) if M[i] > M[i-1] and M[i] >= M[i+1] and M[i] > -40)
+    return round(peaks / (len(M) * 0.1), 2)
+
+def pick_bgm(candidates, dur, prefer='energetic', margin=1.0):
+    """音效自動篩選：從同題材候選曲挑「**夠長(不 loop)** + **最動感(beat 最密)**」的一首。
+    candidates: BGM 路徑 list；dur: 影片秒長。回最佳路徑(沒候選回 None)。
+    prefer='energetic' 選 beat 最高；'chill' 選最低(放鬆題材)。
+    曲比影片短 → -stream_loop 接縫跳音(忽大忽小)→ 一律排除短曲。"""
+    scored = []
+    for b in candidates:
+        try:
+            if _probe_dur(b) < dur + margin:
+                continue
+            scored.append((beat_rate(b), b))
+        except Exception:
+            continue
+    if not scored:
+        return candidates[0] if candidates else None
+    scored.sort(reverse=(prefer == 'energetic'))
+    return scored[0][1]
+
+def build_one_short(segs, caps, bgm, out, vol=0.42, fade=1.2, bgm_start='auto'):
     """segs:[(clip,in,dur)]（已 normalize 的直式 clip）；caps:[(s,e,[(text,color)],kind)]；
-    bgm: BGM mp3；out: 成品。silent footage + 多色字幕 + BGM 當主音（無人聲）。"""
+    bgm: BGM(mp3/wav/m4a)；out: 成品。silent footage + 多色字幕 + BGM 當主音（無人聲）。
+    bgm_start='auto'→自動抓歌高光段(find_music_highlight)；給數字=手動起秒；0=從頭。"""
     total = sum(d for _, _, d in segs)
     base = os.path.splitext(out)[0]
     # 1) visual concat
@@ -137,10 +201,20 @@ def build_one_short(segs, caps, bgm, out, vol=0.42, fade=1.2):
                        capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=workdir)
     if r.returncode:
         raise RuntimeError('build_one_short caption failed: ' + r.stderr[-500:])
-    # 3) BGM 當主音（無人聲）loop + fade
+    # 3) BGM 當主音（無人聲）— 從歌「高光段」起播 + 壓縮器壓平忽大忽小 + 快淡入 + 結尾淡出
+    start = find_music_highlight(bgm, total) if bgm_start == 'auto' else float(bgm_start)
     fo = max(0.3, total - fade)
-    r = _run(['ffmpeg', '-v', 'error', '-y', '-i', cap, '-stream_loop', '-1', '-i', bgm,
-              '-filter_complex', f'[1:a]volume={vol},afade=t=out:st={fo:.2f}:d={fade}[a]',
+    fi = 0.3  # 高光段從歌中間切入 → 0.3s 快淡入避免硬切爆音
+    # acompressor 壓平 BGM 動態（副歌/breakdown 起伏 = 聽到「忽大忽小」）；壓峰貼近安靜段
+    # 但保留每拍瞬態(beat 不死)。dynaudnorm/loudnorm 對此無效(實測)，要壓縮器。
+    comp = 'acompressor=threshold=-24dB:ratio=4:attack=15:release=200:makeup=3'
+    if _probe_dur(bgm) < total + 0.5:
+        print(f'[build_one_short] WARN: BGM 比影片短會 loop 跳音（{os.path.basename(bgm)} '
+              f'{_probe_dur(bgm):.0f}s < {total:.0f}s）— 換 >={total:.0f}s 的曲子，或用 pick_bgm 自動挑')
+    r = _run(['ffmpeg', '-v', 'error', '-y', '-i', cap,
+              '-ss', f'{start:.2f}', '-stream_loop', '-1', '-i', bgm,
+              '-filter_complex',
+              f'[1:a]{comp},volume={vol},afade=t=in:st=0:d={fi},afade=t=out:st={fo:.2f}:d={fade}[a]',
               '-map', '0:v:0', '-map', '[a]', '-t', str(total),
               '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', out])
     if r.returncode:
@@ -159,4 +233,12 @@ if __name__ == '__main__':
     assert r'{\c&H303BFF&}開滿' in txt, 'inline 紅色標籤(含{})漏了'
     assert '🌸' not in txt and '📍' not in txt, 'emoji 沒被 strip'
     assert strip_emoji('a🌸b📍c') == 'abc'
+    # find_music_highlight / beat_rate 的 ebur128 逐幀解析 regression（不跑 ffmpeg）
+    _line = '[Parsed_ebur128_0 @ 0] t: 3.999979   TARGET:-23 LUFS    M: -13.3 S: -14.2     I: -14.9 LUFS       LRA:   0.8 LU'
+    assert re.search(r't:\s*([\d.]+)', _line).group(1) == '3.999979', 'ebur128 t: 解析漏'
+    assert re.search(r'S:\s*(-?[\d.]+|-?inf)', _line).group(1) == '-14.2', 'ebur128 S: 解析漏'
+    assert re.search(r'M:\s*(-?[\d.]+|-?inf)', _line).group(1) == '-13.3', 'ebur128 M: 解析漏'
+    _M = [-30, -25, -28, -24, -29, -22, -27]   # 3 個局部峰
+    _pk = sum(1 for i in range(1, len(_M)-1) if _M[i] > _M[i-1] and _M[i] >= _M[i+1] and _M[i] > -40)
+    assert _pk == 3, 'beat_rate 峰計數錯'
     print('[shorts_vertical selftest] OK')

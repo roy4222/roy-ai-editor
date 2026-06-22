@@ -44,7 +44,7 @@ for x in m:
 
 ---
 
-## 🚦 Ship-ready QA — 影片 ship 前自檢（v0.3.2, canon M91–M95）
+## 🚦 Ship-ready QA — 影片 ship 前自檢（v0.3.3, canon M91–M95）
 
 每支影片 export 後、**還沒 call 它「完成」之前**，跑一次：
 
