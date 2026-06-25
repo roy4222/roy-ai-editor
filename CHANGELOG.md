@@ -3,6 +3,28 @@
 All notable changes to **video-autopilot-kit** are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.1] — 2026-06-25
+
+**Two new field-lessons from a teaching long-form rebuild** (knowledge-only; no code change).
+
+### Added
+- `knowledge/meta-lessons.md`: **M101** — cleaning self-recorded screen footage used as b-roll.
+  The reliable fix is to **re-record with the target app maximized** (covering the browser / AI
+  panels / IDE beside it) and crop only the OS taskbar — not to post-crop, which clips panels and
+  leaves blur bars (and the app's own UI isn't PII, so don't over-crop). Plus: the clean window can
+  be in the **middle** (recorder/notification UI is often at *both* ends → dense per-second scan,
+  bound extraction to the clean core); a "short" played inside a full browser page needs cropping to
+  the **player rectangle** (bookmark bar + others'-videos sidebar leak otherwise); and a **low-res
+  contact sheet hides chrome** — check each main-footage window at full resolution.
+- `knowledge/meta-lessons.md`: **M102** — on Windows, when a build script's stdout is redirected to a
+  file/pipe it defaults to **cp950**, so a `print()` containing `≤` / `✓` / emoji throws
+  `UnicodeEncodeError` and kills the whole build — and only in background/scheduled runs, never
+  interactively. Reconfigure stdout/stderr to UTF-8 at the top of every build script + pass
+  `PYTHONIOENCODING=utf-8` to subprocesses; test once in redirect mode before shipping.
+- `knowledge/programmatic-video-build.md`: §0 now carries the M101 screen-capture workflow and an
+  M102 build-environment note.
+- `M1-M100` → `M1-M102` across the docs (also fixed a couple of stale `M1-M99` references).
+
 ## [0.5.0] — 2026-06-23
 
 **Getting started: runnable examples.** A new `examples/` folder with self-contained,

@@ -24,7 +24,7 @@
 4. 🎯 **字幕統一中央偏下** y=1280-1400（Shorts）/ y=820-930（長片），不跳位（R19 / M13）
 5. 🎓 **跑完先 self-critique 17 關** — 任一未過 → 還沒完成
 
-**完整 M1-M99 meta-lessons + 17 條 antipatterns + Self-critique checklist + Production pipeline SOP → [`meta-lessons.md`](meta-lessons.md)**
+**完整 M1-M102 meta-lessons + 17 條 antipatterns + Self-critique checklist + Production pipeline SOP → [`meta-lessons.md`](meta-lessons.md)**
 
 ---
 
@@ -276,7 +276,7 @@ video-autopilot/
 ├── video_log.md                   ← 每支影片 plan + outcome 紀錄
 ├── optimization_log.md            ← 從 log 學到的 pattern + Mode C reports
 ├── references/
-│   └── meta-lessons.md            ← M1-M99 + 17 antipatterns + Self-critique + SOP
+│   └── meta-lessons.md            ← M1-M102 + 17 antipatterns + Self-critique + SOP
 └── silent_vlog_maker/             ← Python pipeline helpers
     ├── __init__.py                ← Top-level re-exports
     ├── constants.py               ← SAFE_ZONE / fonts / colors / TONEMAP / curves

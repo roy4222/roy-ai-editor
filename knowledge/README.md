@@ -6,7 +6,7 @@
 這是 `video-autopilot-kit` 的「心法層」：`src/` 給你工具（code helpers），`knowledge/` 給你**怎麼用得好**。
 
 ## 🏆 避坑大全（先讀這個）
-- **[meta-lessons.md](meta-lessons.md)** — M1-M99 影片製作避坑大全。每一條都是「我犯過這個錯 + 永久解法」：看畫面才寫字幕、不編造、chrome/隱私洩漏、圖片排版、頻閃、句間死空檔、Shorts BGM 抓高光、忽大忽小壓平、self-test 別 mock 掉外部工具…
+- **[meta-lessons.md](meta-lessons.md)** — M1-M102 影片製作避坑大全。每一條都是「我犯過這個錯 + 永久解法」：看畫面才寫字幕、不編造、chrome/隱私洩漏、圖片排版、頻閃、句間死空檔、Shorts BGM 抓高光、忽大忽小壓平、self-test 別 mock 掉外部工具、自錄螢幕素材重錄>事後裁、Windows cp950 redirect 炸 build…
 
 ## 🤖 自動化工作流
 - [autopilot-workflow.md](autopilot-workflow.md) — 一句話題目 → 完整影片套件的 9 步工作流

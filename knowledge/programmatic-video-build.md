@@ -5,10 +5,12 @@
 > 一支教學長片經多輪修正提煉的**純 ffmpeg 端到端**長片做法（不靠 CapCut GUI）。
 > 每步對應 canon M-rule + `capcut_helpers` helper。Path A（CapCut Pro 模板）做不到 / GUI 太慢時走這條。
 > **黃金律：每一步做完抽幀/probe 驗證，最後跑 `final_delivery_qa()`，不要讓用戶當 QA。**
+> ⚙️ **執行環境（M102）**：Windows 背景/排程跑這些 script 前，每個檔頂端先 `for s in (sys.stdout, sys.stderr): try: s.reconfigure(encoding="utf-8") except: pass` + 子行程帶 `PYTHONIOENCODING=utf-8`；否則 stdout 被 redirect 時預設是 cp950，`print()` 含 `≤`/`✓`/emoji 會 `UnicodeEncodeError` 炸 build（互動跑不會遇到，背景跑才爆）。
 
 ## 0. 素材入庫
 - 新 b-roll 丟 `assets/broll/` → `batch_normalize_broll_folder()`（M85：strip audio M29 + conform 30fps M81，備份 `_intake_bak/`）。
 - **螢幕錄影/截圖**入庫前過 M91 chrome 審查（工具列/側欄/瀏覽器/後台金額）+ 裁到只剩內容區。全螢幕桌面錄影**預設有毒**。
+- **要秀「操作某 app」當 b-roll（M101）**：**首選把目標 app maximize 全螢幕再錄**（直接蓋掉旁邊瀏覽器/AI 面板/IDE）→ 只裁 OS 工作列 → 滿版乾淨，**別事後 crop**（會切到面板、留模糊邊；app 自己的 UI 不算個資）。非得用既有錄影才事後摳：裁切量**量不要猜**（裁頂部 strip 放大量 chrome 底邊，1080p 常 ~150px）、錄影/浮窗 UI 常**頭尾兩端都有** → 逐秒掃找**中段乾淨窗**再 bound 進去、整頁瀏覽器播的「短影音」要 crop 到**中央播放器框**（去書籤列 + 別人影片側欄）、**低解析接觸表會漏 chrome → 每個主素材窗看一張全解析單格**。
 
 ## 1. 人聲 → 字幕 timing
 - whisper / faster-whisper 對 `master_voice` → `caption_blocks.json`（start/end/zh per 句）。
