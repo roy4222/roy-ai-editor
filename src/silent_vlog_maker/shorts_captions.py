@@ -32,6 +32,16 @@ _FONT_CANDIDATES = [
     "C:/Windows/Fonts/msjhbd.ttc",
     "C:/Windows/Fonts/arialbd.ttf",
 ]
+# 跨平台（2026-07-10）：Windows 現值排前（行為不變）；Mac/Linux 由 platform_compat
+# 探測補一個候選。全 miss → _font() 既有 PIL load_default() fallback 不變。
+try:
+    from platform_compat import find_cjk_font as _find_cjk_font
+    _p = _find_cjk_font(prefer=["Black", "bd", "Bold"])
+    if _p and _p not in _FONT_CANDIDATES:
+        _FONT_CANDIDATES.append(_p)
+    del _p
+except ImportError:
+    pass
 
 
 def _hex_rgb(v: str):

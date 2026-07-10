@@ -13,7 +13,7 @@ Generalize the ad-hoc scripts from videos/current/ into reusable module:
 |---|---|---|
 | `paths.py` | ~70 | DRAFTS_ROOT / EFFECT_CACHE / capcut-cli shim / draft_path() / discover_all_draft_jsons() |
 | `process.py` | ~50 | M20 kill_capcut_all() + safe_kill_then_verify() |
-| `draft_io.py` | ~90 | load_draft / save_draft_with_sync (M18 7-file sync) / verify_sync |
+| `draft_io.py` | ~250 | load_draft / save_draft_with_sync (M18 7-file sync) / verify_sync / detect_draft_format (encrypted-draft guard) |
 | `mute.py` | ~110 | M29 mute_all_video_segments (4-level) + audit_mute_state |
 | `effects.py` | ~130 | apply_effect_to_all_captions / swap_effect (花字 bulk swap) / count_effects_by_id |
 | `audit.py` | ~130 | audit_draft (tracks / mute / captions / effects / bgm / timing) |
@@ -58,6 +58,7 @@ from .process import (
 from .draft_io import (
     load_draft, save_draft_with_sync, verify_sync,
     set_canvas_portrait, set_canvas_landscape, auto_set_canvas,
+    detect_draft_format,
 )
 
 from .mute import (
@@ -148,6 +149,7 @@ __all__ = [
     # draft I/O
     "load_draft", "save_draft_with_sync", "verify_sync",
     "set_canvas_portrait", "set_canvas_landscape", "auto_set_canvas",
+    "detect_draft_format",
     # mute
     "mute_all_video_segments", "mute_specific_segments", "audit_mute_state",
     # effects

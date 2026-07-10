@@ -44,8 +44,15 @@ def get_capcut_font_path(font_name: str) -> str:
         from pathlib import Path
         candidates = sorted(Path.home().glob(f["apps_glob"]))
         if not candidates:
+            # 跨平台備註（2026-07-10）：apps_glob 是 Windows CapCut Desktop 佈局；
+            # Mac 版 CapCut 的 bundled font 位置未經驗證 → 非 Windows 直接清楚報錯，
+            # 呼叫端可改用 platform_compat.find_cjk_font() 拿系統 CJK 字型替代。
+            import os as _os
+            hint = ("" if _os.name == "nt" else
+                    "（此 helper 只驗證過 Windows CapCut Desktop 佈局；"
+                    "非 Windows 請改用 platform_compat.find_cjk_font() 取系統字型）")
             raise FileNotFoundError(
-                f"CapCut SystemFont dir not found under {Path.home() / f['apps_glob']} — CapCut installed?")
+                f"CapCut SystemFont dir not found under {Path.home() / f['apps_glob']} — CapCut installed?{hint}")
         sysfont_dir = candidates[-1]  # highest version
         fonts = sorted(sysfont_dir.glob("*.[ot]tf"))
         target = fonts[0] if fonts else sysfont_dir

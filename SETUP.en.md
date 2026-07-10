@@ -8,6 +8,14 @@
 
 *(中文版見 [SETUP.md](SETUP.md))*
 
+## 🧭 Platform requirements (read this first)
+
+The kit has **two first-class paths** with different requirements:
+
+- **Path 1 — Programmatic (recommended default for adopters; Win / Mac / Linux)**: just Python 3.9+ and `ffmpeg`/`ffprobe`. **No CapCut, no Computer Use.** System paths and CJK fonts on Mac/Linux are auto-detected by `src/platform_compat.py`.
+- **Path 2 — CapCut-assisted (what the author personally uses; Windows-first)**: additionally needs CapCut Desktop (international edition) + your AI assistant's Computer Use. **Version-sensitive** — read the compatibility matrix in [TROUBLESHOOTING](TROUBLESHOOTING.md) before touching draft JSON.
+- **On Mac** → go straight to Path 1 (there is no working equivalent of the CapCut GUI automation on Mac).
+
 ## ⚡ Fastest start (you don't have to fill it all in!)
 
 > **Think the questionnaire is long? You don't need to finish it before starting.** Of the 6 sections below, only **3 are ★required** — fill the rest **as you go**.
@@ -21,7 +29,7 @@ The AI asks one question at a time and fills the files for you — **you just an
 **5-minute minimum (answer just these 3 to start):**
 1. Channel name? **Do you show your face?** (decides whether intros/outros schedule an on-camera cue)
 2. What do you make, and which platform? (tutorial/vlog…, YT long-form/Shorts/Reels)
-3. **CapCut** (primary) or pure ffmpeg? Where are your asset / export paths?
+3. **Path 1 (programmatic, cross-platform)** or **Path 2 (CapCut, Windows-first)**? Where are your asset / export paths?
 
 → That's enough to start editing. Voice / Algorithm / Community (4️⃣5️⃣6️⃣) can wait until you want to optimize.
 
@@ -49,9 +57,10 @@ The AI asks one question at a time and fills the files for you — **you just an
 - **Hard no's?** (anti-patterns — e.g. no profanity, no fake hype, no certain memes)
 
 ## 4️⃣ Production → generates `config.py`　★required
-- **The primary tool is CapCut Desktop** (Pro is better) — normal edits go through CapCut. Installed?
-- ⚠️ **Does your AI assistant have Computer Use enabled?** CapCut has no public API — automation works by the **AI operating the CapCut window via Computer Use** (click / apply template / export). **Without Computer Use, CapCut automation won't run.**
-- (The pure-ffmpeg `silent_vlog_maker` path is **only for silent, no-voiceover vlogs** — not the default)
+- **Which path are you on?** (see "Platform requirements" up top)
+  - **Path 1 Programmatic** (recommended default; Win/Mac/Linux) — pure-code pipeline, just Python + ffmpeg, **no CapCut**
+  - **Path 2 CapCut-assisted** (Windows-first) — pick this only if you want CapCut's fancy-text / cloud templates
+- If Path 2: is **CapCut Desktop (international edition)** installed? ⚠️ **Does your AI assistant have Computer Use enabled?** CapCut has no public API — GUI automation works by the **AI operating the CapCut window via Computer Use** (apply templates / export); without it, it won't run. Draft-JSON editing is **version-sensitive** — run `detect_draft_format()` first and read [TROUBLESHOOTING](TROUBLESHOOTING.md)
 - Where are your **fonts** / **BGM** / **b-roll** stored? Project / export paths?
 - (Filled into `config.py` — the example contains **no account names**)
 

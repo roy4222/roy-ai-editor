@@ -18,10 +18,24 @@ def _env_path(var: str, default: Path) -> Path:
 # ─────────────────────────────────────────────────────────────────────
 # CapCut Desktop User Data root (Windows default; override via env)
 # ─────────────────────────────────────────────────────────────────────
-CAPCUT_USER_DATA = _env_path(
-    "CAPCUT_USER_DATA",
-    Path.home() / "AppData" / "Local" / "CapCut" / "User Data",
-)
+def _default_capcut_user_data() -> Path:
+    """Windows 現值不變；非 Windows 走 platform_compat 偵測
+    （Mac = ~/Movies/CapCut/User Data，CapCut/JianyingPro 都試）。
+    偵測不到 → 回 Windows 預設值（錯誤留到實際存取時報，跟舊行為一致）。"""
+    win_default = Path.home() / "AppData" / "Local" / "CapCut" / "User Data"
+    if os.name == "nt":
+        return win_default
+    try:
+        from platform_compat import capcut_drafts_dir
+        d = capcut_drafts_dir()  # .../User Data/Projects/com.lveditor.draft
+        if d is not None:
+            return d.parents[1]  # 上兩層 = User Data
+    except ImportError:
+        pass
+    return win_default
+
+
+CAPCUT_USER_DATA = _env_path("CAPCUT_USER_DATA", _default_capcut_user_data())
 DRAFTS_ROOT = CAPCUT_USER_DATA / "Projects" / "com.lveditor.draft"
 EFFECT_CACHE = CAPCUT_USER_DATA / "Cache" / "effect"
 

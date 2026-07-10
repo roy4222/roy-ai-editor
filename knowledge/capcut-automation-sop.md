@@ -2,6 +2,12 @@
 
 # CapCut Agent Operations — GUI 自動化 SOP（封裝 M32–M40）
 
+> ### ⚠️ Version & platform requirements
+> - **平台**：本 SOP 的 GUI 自動化為 **Windows-first**（座標/流程/paywall 地圖以 Windows CapCut 校準）。macOS 上 CapCut 無 AppleScript dictionary、UI 自繪非原生 AppKit — **Mac 建議走 Path D（JSON direct edit）/ Path E（純 ffmpeg）**，不要期待 GUI 自動化等效。詳見 `TROUBLESHOOTING.md`「CapCut version compatibility & Mac」。
+> - **版本**：CapCut **國際版 6.x–9.x** 草稿為明文 JSON 可直改（8.9 親測）；中國版**剪映 6.0+** 草稿 AES 加密**不可直改**（鎖 5.9.x 或改用國際版）。改 JSON 前先跑 `capcut_helpers.detect_draft_format()` 驗明文。
+> - **8.7+（Win）注意**：直改 root JSON 可能被 `template-2.tmp` / `Timelines/` 鏡像覆蓋 — 一律用 `save_draft_with_sync()`（M18 全同步）。
+> - **草稿路徑**：Win `%LOCALAPPDATA%\CapCut\User Data\Projects\com.lveditor.draft\`；Mac `~/Movies/CapCut/User Data/Projects/com.lveditor.draft/`（community reported — 用 `CAPCUT_USER_DATA` env override）。
+
 > 取代每次 brief 重寫 500 行安全規則。Agent 載入此知識檔 → 讀對應 reference → token cost 砍 60%+。
 
 CapCut Desktop GUI 操作 SOP — Computer Use agent 在 CapCut 套字體 / 模板 / 特效 / Export 的封裝知識庫。當主 Claude 要 spawn agent 跑 CapCut 時觸發載入。觸發詞：「用 CapCut 套模板」「CapCut 加字幕」「agent 剪片」「跑 CapCut」「Export v[N]」「換 CapCut 字體」。也用於診斷 — 用戶說「字醜」「沒綜藝感」「Pro paywall」要判斷可不可解。

@@ -179,6 +179,15 @@ def _resolve_cjk_font() -> str:
     for p in cands:
         if os.path.exists(p):
             return p.replace(":", "\\:")  # ffmpeg drawtext 需 escape 磁碟代號冒號
+    # 跨平台補探測（2026-07-10）：上面固定候選全 miss 才走（Windows 行為不變），
+    # 涵蓋 macOS 15 Sequoia PingFang 搬家 / Linux fc-list 等情況。
+    try:
+        from platform_compat import find_cjk_font as _fcf
+        p = _fcf()
+        if p:  # drawtext：反斜線是 escape 字元 → 先轉 / 再 escape 冒號
+            return p.replace("\\", "/").replace(":", "\\:")
+    except ImportError:
+        pass
     raise FileNotFoundError(
         "找不到 CJK 字型 — 請傳 font_path= 指定（ffmpeg drawtext 用），"
         "或安裝 Noto Sans CJK / 微軟正黑體。")

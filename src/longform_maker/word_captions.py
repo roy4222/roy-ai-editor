@@ -257,13 +257,25 @@ def chapter_card_tag():
     return r"{\blur16\alpha&HFF&\t(0,280,\blur0\alpha&H00&)}"
 
 
+def _ass_fontname() -> str:
+    """ASS Style 的 Fontname（libass 用字型「家族名」不是檔案路徑）。
+    Windows 維持微軟正黑（行為不變）；Mac 用 PingFang TC（家族名走 CoreText 解析，
+    不受 macOS 15 Sequoia PingFang.ttc 檔案搬家影響）；Linux 用 Noto Sans CJK TC。"""
+    import sys as _sys
+    if _sys.platform == "win32":
+        return "Microsoft JhengHei"
+    if _sys.platform == "darwin":
+        return "PingFang TC"
+    return "Noto Sans CJK TC"
+
+
 ASS_HEAD = ("[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\n"
             "ScaledBorderAndShadow: yes\n\n[V4+ Styles]\n"
             "Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, "
             "Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
             "Alignment, MarginL, MarginR, MarginV, Encoding\n"
             # M68：教學長片 = 白字 + 黑色半透明底框，不多色
-            "Style: Cap,Microsoft JhengHei,82,&H00FFFFFF,&H4D000000,&H00000000,-1,0,0,0,100,100,0.5,0,3,16,0,2,200,200,96,1\n\n"
+            f"Style: Cap,{_ass_fontname()},82,&H00FFFFFF,&H4D000000,&H00000000,-1,0,0,0,100,100,0.5,0,3,16,0,2,200,200,96,1\n\n"
             "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
 
 

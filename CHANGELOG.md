@@ -3,6 +3,43 @@
 All notable changes to **video-autopilot-kit** are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.8.0] — 2026-07-10
+
+**Two-path repositioning + cross-platform support.** Driven by adopter feedback: CapCut
+version/encryption issues breaking draft automation, Mac users who couldn't run the
+"primary" path at all, and a clear preference among adopters for the fully programmatic
+pipeline. The kit now presents **two first-class paths** instead of "CapCut primary /
+ffmpeg secondary".
+
+### Added
+- **`src/platform_compat.py`** — standalone Win / Mac / Linux compatibility layer
+  (nothing in the kit imports *from* it circularly; `constants` / `paths` import it).
+  CJK-font probing with per-platform candidate lists (Windows order preserved so
+  resolution is identical to the old hardcodes; handles the macOS 15 Sequoia
+  `PingFang.ttc` disappearance), CapCut/Jianying drafts-dir resolution per platform
+  (`CAPCUT_USER_DATA` env override), returns `None` instead of raising so callers keep
+  their own fallbacks.
+- **`detect_draft_format()`** (`capcut_helpers`) — run before any draft-JSON edit:
+  detects plaintext vs. AES-encrypted drafts (Jianying CN 6.0+), reports a version hint
+  and whether the draft is directly editable, and accepts a project name / draft folder /
+  JSON file path. `load_draft()` now raises a guided error on encrypted drafts.
+- `TROUBLESHOOTING.md` — new **"CapCut version compatibility & Mac"** section: the
+  per-version draft-format matrix (international 6.x-9.x plaintext, Jianying CN ≤5.9
+  plaintext / 6.0+ encrypted with no official bypass), the three escape routes, Mac
+  draft paths + the `draft_info.json` filename difference, Mac automation limits
+  (no AppleScript dictionary → use the programmatic path), and a top-5 workflow-trap FAQ.
+
+### Changed
+- **`README.md` / `README.en.md` — two-path repositioning.** **Path 1 = Programmatic**
+  (`longform_maker` + `silent_vlog_maker` + the `capcut_helpers` QA gates) is
+  cross-platform (Win/Mac/Linux), CapCut-free, and the **recommended default for
+  adopters**; **Path 2 = CapCut-assisted** (draft JSON + Computer Use) is Windows-first
+  and version-sensitive — it's what the author personally uses, stated honestly as such.
+  Added a "Which path should I use?" decision tree up top and a per-module platform
+  support matrix.
+- `SETUP.md` / `SETUP.en.md` — platform requirements aligned with the two-path model;
+  the production section now asks which path you're on instead of assuming CapCut.
+
 ## [0.7.0] — 2026-07-09
 
 **Premium motion engine + mechanized caption timing & screen-recording cleanup** (the biggest *visual*-quality jump in the kit so far — v0.6.0 fixed the sound, this one fixes the picture). Motivated by two shipped-video incidents (a recorder panel leaking into a delivered cut; captions drifting 2-3s from narration) plus a 6-lens research pass on what separates "clean" from "premium" motion design.
