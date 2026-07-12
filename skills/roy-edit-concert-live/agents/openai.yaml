@@ -1,0 +1,4 @@
+interface:
+  display_name: "Roy Edit Concert Live"
+  short_description: "Turn concert URLs into review-ready karaoke clips"
+  default_prompt: "Use $roy-edit-concert-live to inspect this concert URL and prepare review-ready per-song karaoke clips."
