@@ -4,11 +4,19 @@ build-backend = "hatchling.build"
 
 [project]
 name = "roy-ai-editor"
-version = "0.1.0"
-description = "Local-first AI video editor for Roy's repeatable media workflows"
+version = "0.2.0"
+description = "Local-first AI video editor with a bilingual karaoke workflow"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+  "pykakasi>=2.3.0",
+  "yt-dlp>=2025.1.1",
+]
+
+[project.optional-dependencies]
+alignment = [
+  "stable-ts>=2.19.0",
+]
 
 [project.scripts]
 roy-editor = "roy_ai_editor.cli:main"

@@ -1,6 +1,6 @@
 ---
 name: roy-edit-concert-live
-description: Turn a YouTube concert, 3D live, or singing-stream URL into review-ready per-song clips with rights evidence, complete musical endings, sourced lyrics and translations, kanji furigana, karaoke timing, QA, and YouTube metadata. Use when Roy asks Codex to 剪 Live、切歌、做歌回精華、翻譯演唱影片、製作卡拉 OK 字幕，or invokes $roy-edit-concert-live with a concert URL.
+description: Orchestrate a review-gated, manual-assisted concert workflow. The current deterministic tools create projects, rights-gated downloads, exact cuts, optional stable-ts timestamps, bilingual ASS with kanji furigana, burn-in, and probing; Codex manually researches rights/lyrics/translations and prepares metadata. Use when Roy asks Codex to 剪 Live、切歌、做歌回精華、翻譯演唱影片、製作卡拉 OK 字幕，or invokes $roy-edit-concert-live with a concert URL.
 ---
 
 # Roy Edit Concert Live
@@ -11,11 +11,29 @@ Produce review-ready song clips through the `roy-ai-editor` project. Treat Codex
 
 1. Read `references/workflow.md` before processing a new URL.
 2. Read `references/quality-standard.md` before cutting, aligning, rendering, or approving output.
-3. Work from `/home/roy422/newLife/roy-ai-editor`.
-4. Store large media outside Git under `/mnt/d/VideoProjects/roy-ai-editor/` unless Roy specifies another workspace.
-5. Run `uv sync` and inspect `uv run roy-editor --help` before assuming a command exists.
+3. Run `python scripts/bootstrap_repo.py` from this skill. If the Repo is missing, ask before running it again with `--install`; never clone silently.
+4. Work from the resolved Repo. Respect `ROY_AI_EDITOR_REPO` when set.
+5. Store large media outside Git. On Roy's Windows/WSL setup, default to `/mnt/d/VideoProjects/roy-ai-editor/`; otherwise ask for a workspace.
+6. Run `uv sync` and inspect `uv run roy-editor --help` before assuming a command exists.
 
-> The V0 CLI is currently scaffolded only. Never claim that download, rights research, segmentation, alignment, rendering, or upload is implemented unless the current CLI and tests prove it. When a stage is missing, prepare its evidence and project artifacts, report the exact missing capability, and stop at the relevant review gate.
+The CLI currently implements project creation, yt-dlp download, exact FFmpeg cuts, bilingual ASS generation with kanji-only furigana, subtitle burn-in, and FFprobe inspection. Fully automatic rights decisions, track discovery, lyrics acquisition, singing forced alignment, translation evaluation, multi-singer attribution, and YouTube upload are not implemented yet. Never claim a missing stage is automatic; prepare evidence/artifacts and stop at its review gate.
+
+## CLI sequence
+
+```bash
+uv run roy-editor doctor
+uv run roy-editor concert create "URL" --workspace /mnt/d/VideoProjects/roy-ai-editor/projects
+uv run roy-editor concert approve-rights PROJECT --evidence-url "URL" --note "Roy approval note"
+uv run roy-editor download PROJECT
+uv run roy-editor cut SOURCE OUTPUT --start SECONDS --end SECONDS
+uv sync --extra alignment
+uv run roy-editor align VOCALS.wav aligned.json --language ja
+uv run roy-editor karaoke render TIMING.json LYRICS.ass
+uv run roy-editor karaoke burn CLIP.mp4 LYRICS.ass FINAL.mp4
+uv run roy-editor probe FINAL.mp4
+```
+
+Use `examples/karaoke-timing.example.json` as the timing schema. Exact token timing is preferred. Automatically distributed timing is only a draft and must not be presented as precise singing alignment.
 
 ## Operating contract
 

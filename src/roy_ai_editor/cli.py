@@ -3,34 +3,173 @@
 from __future__ import annotations
 
 import argparse
+import json
+import shutil
 from collections.abc import Sequence
+from pathlib import Path
+
+from . import media
+from .alignment import transcribe
+from .karaoke import render_file
+from .project import DEFAULT_WORKSPACE, approve_rights, create_project, load_project, require_rights_approval
+
+VENDORED_AUTOPILOT_COMMIT = "f15a5f99d58cbaedffb2590e76218bb85765331c"
+
+
+def _vendor_dir() -> Path:
+    return Path(__file__).resolve().parents[2] / "vendor" / "video-autopilot-kit"
+
+
+def _vendor_is_complete() -> bool:
+    vendor = _vendor_dir()
+    marker = vendor / "VENDORED_COMMIT"
+    return (
+        (vendor / "README.md").is_file()
+        and (vendor / "LICENSE").is_file()
+        and marker.is_file()
+        and marker.read_text(encoding="utf-8").strip() == VENDORED_AUTOPILOT_COMMIT
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="roy-editor",
-        description="Local-first AI video editing workflows.",
-    )
-    parser.add_argument("--version", action="version", version="%(prog)s 0.1.0")
+    parser = argparse.ArgumentParser(prog="roy-editor", description="Local-first AI video editing workflows.")
+    parser.add_argument("--version", action="version", version="%(prog)s 0.2.0")
+    commands = parser.add_subparsers(dest="command")
 
-    subcommands = parser.add_subparsers(dest="command")
-    concert = subcommands.add_parser(
-        "concert",
-        help="Create review-ready song clips from a concert or live stream.",
-    )
-    concert.add_argument(
-        "url",
-        nargs="?",
-        help="Source video URL. Execution is not implemented in V0 yet.",
-    )
+    commands.add_parser("doctor", help="Check required executables and vendored tools.")
+
+    concert = commands.add_parser("concert", help="Create a review-gated concert project.")
+    concert_commands = concert.add_subparsers(dest="concert_command")
+    create = concert_commands.add_parser("create", help="Create a project manifest from a concert URL.")
+    create.add_argument("url")
+    create.add_argument("--workspace", type=Path, default=DEFAULT_WORKSPACE)
+    approve = concert_commands.add_parser("approve-rights", help="Record Roy's explicit rights approval.")
+    approve.add_argument("project", type=Path)
+    approve.add_argument("--evidence-url", required=True)
+    approve.add_argument("--note", required=True)
+    approve.add_argument("--approved-by", default="Roy")
+
+    download = commands.add_parser("download", help="Download an approved project's source with yt-dlp.")
+    download.add_argument("project", type=Path)
+    download.add_argument("--dry-run", action="store_true")
+
+    cut = commands.add_parser("cut", help="Cut an exact song segment with FFmpeg.")
+    cut.add_argument("source", type=Path)
+    cut.add_argument("output", type=Path)
+    cut.add_argument("--start", type=float, required=True)
+    cut.add_argument("--end", type=float, required=True)
+    cut.add_argument("--stream-copy", action="store_true")
+    cut.add_argument("--dry-run", action="store_true")
+
+    karaoke = commands.add_parser("karaoke", help="Render or burn bilingual ASS karaoke subtitles.")
+    karaoke_commands = karaoke.add_subparsers(dest="karaoke_command")
+    render = karaoke_commands.add_parser("render", help="Render ASS from a timing JSON file.")
+    render.add_argument("timing", type=Path)
+    render.add_argument("output", type=Path)
+    render.add_argument("--font", default="Noto Sans CJK JP")
+    burn = karaoke_commands.add_parser("burn", help="Burn an ASS subtitle file into a video.")
+    burn.add_argument("source", type=Path)
+    burn.add_argument("subtitles", type=Path)
+    burn.add_argument("output", type=Path)
+    burn.add_argument("--dry-run", action="store_true")
+
+    align = commands.add_parser("align", help="Create stable-ts word timestamps (optional extra).")
+    align.add_argument("audio", type=Path)
+    align.add_argument("output", type=Path)
+    align.add_argument("--model", default="large-v3")
+    align.add_argument("--language", default="ja")
+
+    autopilot = commands.add_parser("autopilot", help="Locate the complete vendored video-autopilot-kit.")
+    autopilot.add_argument("--path-only", action="store_true")
+
+    probe = commands.add_parser("probe", help="Print FFprobe JSON for an output file.")
+    probe.add_argument("path", type=Path)
     return parser
+
+
+def _print_command(result: object) -> None:
+    if isinstance(result, list):
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def _doctor() -> int:
+    checks = {
+        "ffmpeg": shutil.which("ffmpeg"),
+        "ffprobe": shutil.which("ffprobe"),
+        "yt-dlp module": True,
+        "pykakasi": True,
+        "vendored video-autopilot-kit": _vendor_is_complete(),
+    }
+    try:
+        import yt_dlp  # noqa: F401
+    except ImportError:
+        checks["yt-dlp module"] = False
+    try:
+        import pykakasi  # noqa: F401
+    except ImportError:
+        checks["pykakasi"] = False
+
+    for name, value in checks.items():
+        print(f"{'OK' if value else 'MISSING':7} {name}" + (f": {value}" if isinstance(value, str) else ""))
+    return 0 if all(checks.values()) else 1
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "concert":
-        parser.error("concert workflow is scaffolded but not implemented yet")
+
+    if args.command == "doctor":
+        return _doctor()
+    if args.command == "concert" and args.concert_command == "create":
+        project_dir, manifest = create_project(args.url, args.workspace)
+        print(json.dumps({"project_dir": str(project_dir), "manifest": manifest}, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "concert" and args.concert_command == "approve-rights":
+        manifest = approve_rights(
+            args.project,
+            evidence_url=args.evidence_url,
+            note=args.note,
+            approved_by=args.approved_by,
+        )
+        print(json.dumps(manifest["rights"], ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "download":
+        manifest = load_project(args.project) if args.dry_run else require_rights_approval(args.project)
+        _print_command(
+            media.download(
+                manifest["source_url"],
+                args.project.expanduser().resolve() / "source",
+                dry_run=args.dry_run,
+            )
+        )
+        return 0
+    if args.command == "cut":
+        _print_command(media.cut(args.source, args.output, args.start, args.end, stream_copy=args.stream_copy, dry_run=args.dry_run))
+        return 0
+    if args.command == "karaoke" and args.karaoke_command == "render":
+        qa = render_file(args.timing, args.output, font=args.font)
+        print(json.dumps(qa, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "karaoke" and args.karaoke_command == "burn":
+        _print_command(media.burn_ass(args.source, args.subtitles, args.output, dry_run=args.dry_run))
+        return 0
+    if args.command == "probe":
+        print(json.dumps(media.probe(args.path), ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "align":
+        transcribe(args.audio, args.output, model_name=args.model, language=args.language)
+        print(args.output)
+        return 0
+    if args.command == "autopilot":
+        vendor = _vendor_dir()
+        if not _vendor_is_complete():
+            parser.error(
+                "vendored video-autopilot-kit is missing or does not match the pinned commit "
+                f"{VENDORED_AUTOPILOT_COMMIT}"
+            )
+        print(vendor if args.path_only else vendor / "README.md")
+        return 0
+
     parser.print_help()
     return 0
 
