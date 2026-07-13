@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from roy_ai_editor.karaoke import ass_time, load_timing, render_ass, render_file
+from roy_ai_editor.karaoke import ass_time, auto_ruby, load_timing, render_ass, render_file
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "timing.json"
@@ -53,4 +53,37 @@ def test_distributed_timing_creates_review_required_qa(tmp_path: Path) -> None:
     source.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     qa = render_file(source, output)
     assert qa["timing_status"] == "review-required"
+    assert qa["ruby_status"] == "review-required"
+    assert qa["ruby_layout_model"] == "libass-calibrated-v2"
+    assert qa["ruby_spans"][0]["base_text"] == "星"
+    assert qa["ruby_spans"][0]["reading"] == "ほし"
+    assert isinstance(qa["ruby_spans"][0]["x"], int)
     assert (tmp_path / "lyrics.qa.json").exists()
+
+
+def test_ruby_uses_libass_calibrated_fullwidth_advance(tmp_path: Path) -> None:
+    payload = {
+        "schema_version": 1,
+        "lines": [
+            {
+                "start": 1.0,
+                "end": 4.0,
+                "japanese": "ここに届けてくれてたみたい",
+                "translation": "",
+                "ruby": [{"start_index": 3, "end_index": 5, "reading": "とどけ"}],
+            }
+        ],
+    }
+    source = tmp_path / "ruby-layout.json"
+    source.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    rendered = render_ass(load_timing(source))
+
+    assert "{\\pos(840,875)}とどけ" in rendered
+
+
+def test_auto_ruby_reads_standalone_kimi_as_lyric_pronoun() -> None:
+    spans = auto_ruby("君の勇気の歌になる")
+    kimi = next(span for span in spans if span.start_index == 0 and span.end_index == 1)
+
+    assert kimi.reading == "きみ"

@@ -10,6 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 KANJI_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff々〆ヵヶ]")
+LYRIC_READING_OVERRIDES = {
+    "君": "きみ",
+}
+KARAOKE_FONT_SIZE = 68
+KARAOKE_SPACING = 1.0
+LIBASS_EM_FACTOR = 0.691176
 
 
 @dataclass(frozen=True)
@@ -53,6 +59,13 @@ def display_units(text: str) -> float:
     return sum(1.0 if unicodedata.east_asian_width(char) in "WFA" else 0.55 for char in text)
 
 
+def display_advance(text: str, *, font_size: float, spacing: float = 0.0) -> float:
+    """Estimate libass advance using an empirically calibrated Noto Sans JP em."""
+    if not text:
+        return 0.0
+    return display_units(text) * font_size * LIBASS_EM_FACTOR + max(0, len(text) - 1) * spacing
+
+
 def _katakana_to_hiragana(text: str) -> str:
     return "".join(chr(ord(ch) - 0x60) if "ァ" <= ch <= "ヶ" else ch for ch in text)
 
@@ -70,6 +83,7 @@ def auto_ruby(text: str) -> tuple[RubySpan, ...]:
         end = cursor + len(surface)
         if KANJI_RE.search(surface):
             reading = _katakana_to_hiragana(item.get("hira") or item.get("kana") or "")
+            reading = LYRIC_READING_OVERRIDES.get(surface, reading)
             if reading and reading != surface:
                 result.append(RubySpan(cursor, end, reading))
         cursor = end
@@ -152,6 +166,56 @@ def _dialogue(layer: int, start: float, end: float, style: str, text: str) -> st
     return f"Dialogue: {layer},{ass_time(start)},{ass_time(end)},{style},,0,0,0,,{text}"
 
 
+def ruby_position(
+    japanese: str,
+    span: RubySpan,
+    *,
+    width: int = 1920,
+    height: int = 1080,
+) -> tuple[int, int]:
+    total_advance = display_advance(
+        japanese,
+        font_size=KARAOKE_FONT_SIZE,
+        spacing=KARAOKE_SPACING,
+    )
+    left = width / 2 - total_advance / 2
+    before_text = japanese[: span.start_index]
+    base_text = japanese[span.start_index : span.end_index]
+    before = display_advance(
+        before_text,
+        font_size=KARAOKE_FONT_SIZE,
+        spacing=KARAOKE_SPACING,
+    )
+    if before_text and base_text:
+        before += KARAOKE_SPACING
+    base = display_advance(
+        base_text,
+        font_size=KARAOKE_FONT_SIZE,
+        spacing=KARAOKE_SPACING,
+    )
+    return math.floor(left + before + base / 2), height - 205
+
+
+def ruby_layout_report(lines: list[Line], *, width: int = 1920, height: int = 1080) -> list[dict]:
+    report: list[dict] = []
+    for line_index, line in enumerate(lines, start=1):
+        for span in line.ruby:
+            x, y = ruby_position(line.japanese, span, width=width, height=height)
+            report.append(
+                {
+                    "line": line_index,
+                    "japanese": line.japanese,
+                    "base_text": line.japanese[span.start_index : span.end_index],
+                    "reading": span.reading,
+                    "start_index": span.start_index,
+                    "end_index": span.end_index,
+                    "x": x,
+                    "y": y,
+                }
+            )
+    return report
+
+
 def render_ass(lines: list[Line], *, width: int = 1920, height: int = 1080, font: str = "Noto Sans CJK JP") -> str:
     header = f"""[Script Info]
 ScriptType: v4.00+
@@ -180,13 +244,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if line.translation:
             events.append(_dialogue(1, line.start, line.end, "Chinese", escape_ass(line.translation)))
 
-        total_units = display_units(line.japanese)
-        left = width / 2 - total_units * 68 * 0.52 / 2
         for span in line.ruby:
-            before = display_units(line.japanese[: span.start_index])
-            base = display_units(line.japanese[span.start_index : span.end_index])
-            x = math.floor(left + (before + base / 2) * 68 * 0.52)
-            y = height - 205
+            x, y = ruby_position(line.japanese, span, width=width, height=height)
             ruby_text = f"{{\\pos({x},{y})}}{escape_ass(span.reading)}"
             events.append(_dialogue(2, line.start, line.end, "Ruby", ruby_text))
         previous_end = line.end
@@ -198,12 +257,21 @@ def render_file(input_path: Path, output_path: Path, *, font: str = "Noto Sans C
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(render_ass(lines, font=font), encoding="utf-8-sig")
     draft_lines = [index for index, line in enumerate(lines, start=1) if line.timing_mode != "exact"]
+    ruby_spans = ruby_layout_report(lines)
     qa = {
         "schema_version": 1,
         "subtitle": str(output_path),
         "line_count": len(lines),
         "timing_status": "review-required" if draft_lines else "exact-input",
         "draft_timing_lines": draft_lines,
+        "ruby_status": "review-required" if ruby_spans else "not-applicable",
+        "ruby_layout_model": "libass-calibrated-v2",
+        "ruby_spans": ruby_spans,
+        "ruby_warning": (
+            "Review every ruby span for reading and visual centering before release."
+            if ruby_spans
+            else None
+        ),
         "warning": (
             "Distributed timing is a draft and requires singing alignment review."
             if draft_lines
