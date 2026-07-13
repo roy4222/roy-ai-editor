@@ -18,6 +18,7 @@ dependencies = [
 [project.optional-dependencies]
 alignment = [
   "stable-ts>=2.19.0",
+  "numba>=0.61.2",
 ]
 
 [project.scripts]
