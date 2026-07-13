@@ -70,6 +70,48 @@ def _katakana_to_hiragana(text: str) -> str:
     return "".join(chr(ord(ch) - 0x60) if "ァ" <= ch <= "ヶ" else ch for ch in text)
 
 
+def _item_ruby_spans(surface: str, reading: str, cursor: int) -> tuple[RubySpan, ...]:
+    """Split one pykakasi item into kanji-only ruby spans.
+
+    Pykakasi deliberately groups okurigana with kanji (for example ``届け``
+    becomes one item with the reading ``とどけ``).  Karaoke ruby must sit only
+    above the kanji, so kana inside the surface is used as an alignment anchor
+    and removed from both the base span and its reading.
+    """
+    runs = tuple(re.finditer(rf"{KANJI_RE.pattern}+", surface))
+    if not runs:
+        return ()
+
+    reading = _katakana_to_hiragana(reading)
+    first_prefix = _katakana_to_hiragana(surface[: runs[0].start()])
+    reading_cursor = 0
+    if first_prefix:
+        prefix_at = reading.find(first_prefix)
+        if prefix_at < 0:
+            return ()
+        reading_cursor = prefix_at + len(first_prefix)
+
+    result: list[RubySpan] = []
+    for index, run in enumerate(runs):
+        next_start = runs[index + 1].start() if index + 1 < len(runs) else len(surface)
+        kana_anchor = _katakana_to_hiragana(surface[run.end() : next_start])
+        if kana_anchor:
+            anchor_at = reading.find(kana_anchor, reading_cursor)
+            if anchor_at < 0:
+                return ()
+            kanji_reading = reading[reading_cursor:anchor_at]
+            reading_cursor = anchor_at + len(kana_anchor)
+        else:
+            kanji_reading = reading[reading_cursor:]
+            reading_cursor = len(reading)
+
+        base = run.group(0)
+        kanji_reading = LYRIC_READING_OVERRIDES.get(base, kanji_reading)
+        if kanji_reading and kanji_reading != base:
+            result.append(RubySpan(cursor + run.start(), cursor + run.end(), kanji_reading))
+    return tuple(result)
+
+
 def auto_ruby(text: str) -> tuple[RubySpan, ...]:
     try:
         from pykakasi import kakasi
@@ -83,9 +125,7 @@ def auto_ruby(text: str) -> tuple[RubySpan, ...]:
         end = cursor + len(surface)
         if KANJI_RE.search(surface):
             reading = _katakana_to_hiragana(item.get("hira") or item.get("kana") or "")
-            reading = LYRIC_READING_OVERRIDES.get(surface, reading)
-            if reading and reading != surface:
-                result.append(RubySpan(cursor, end, reading))
+            result.extend(_item_ruby_spans(surface, reading, cursor))
         cursor = end
     return tuple(result)
 

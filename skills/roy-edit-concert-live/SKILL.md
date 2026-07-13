@@ -30,10 +30,13 @@ uv sync --extra alignment
 uv run roy-editor align VOCALS.wav aligned.json --language ja
 uv run roy-editor karaoke render TIMING.json LYRICS.ass
 uv run roy-editor karaoke burn CLIP.mp4 LYRICS.ass FINAL.mp4
+uv run python scripts/karaoke_visual_qa.py FINAL.mp4 TIMING.json QA_DIR
 uv run roy-editor probe FINAL.mp4
 ```
 
 Use `examples/karaoke-timing.example.json` as the timing schema. Exact token timing is preferred. Automatically distributed timing is only a draft and must not be presented as precise singing alignment.
+
+Do not approve ruby from ASS coordinates or a scaled full-frame screenshot. Run `scripts/karaoke_visual_qa.py` against the actually burned MP4, preserve the full 1920-pixel width while cropping only the subtitle-height band, and inspect every numbered lyric crop. Any clipped line, wrong reading, kana included in a ruby base span, or visibly off-center ruby fails the render gate.
 
 ## Operating contract
 

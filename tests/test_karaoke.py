@@ -87,3 +87,11 @@ def test_auto_ruby_reads_standalone_kimi_as_lyric_pronoun() -> None:
     kimi = next(span for span in spans if span.start_index == 0 and span.end_index == 1)
 
     assert kimi.reading == "きみ"
+
+
+def test_auto_ruby_places_reading_only_above_kanji() -> None:
+    text = "何も振り向かず"
+    spans = auto_ruby(text)
+    rendered = [(text[span.start_index : span.end_index], span.reading) for span in spans]
+
+    assert rendered == [("何", "なに"), ("振", "ふ"), ("向", "む")]
