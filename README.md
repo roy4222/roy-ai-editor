@@ -169,6 +169,16 @@ git log --oneline HEAD..upstream/main
 
 Integrate reviewed updates on a dedicated branch; do not blindly pull them into a customized main branch.
 
+Before publishing an integration branch, run the repository boundary gate:
+
+```bash
+python scripts/check_repo_integrity.py
+```
+
+It verifies both required Git ancestors, the pinned upstream MIT license, tracked-file
+size limits, secret signatures, and the rule that private settings and Production
+Assets stay outside Git.
+
 ## Public Customization
 
 Safe, versioned customization lives in [profiles](profiles) and [workflows](workflows).
