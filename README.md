@@ -97,6 +97,24 @@ git log --oneline HEAD..upstream/main
 
 Integrate reviewed updates on a dedicated branch; do not blindly pull them into a customized main branch.
 
+## Public Customization
+
+Safe, versioned customization lives in [profiles](profiles) and [workflows](workflows).
+The example profile contains Roy's reusable editing preferences but no credentials,
+private analytics, restricted lyrics, or Production Assets. Local-only values belong
+under `profiles/private/`, a `*.local.*` overlay, `config.py`, or environment variables;
+those paths are ignored by Git.
+
+Inspect a standard Media Project through the versioned Concert Live Workflow:
+
+```bash
+uv run roy-editor workflow concert-live \
+  /mnt/d/VideoProjects/RoyAIEditor/projects/PROJECT_ID
+```
+
+The command reports the next explicit review gate from `project.json`. It never treats
+a filename such as `final-v2.mp4` as an Approved Deliverable.
+
 ## Codex Skill
 
 The source of truth is [skills/roy-edit-concert-live](skills/roy-edit-concert-live). To install it into Windows Codex Desktop:

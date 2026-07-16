@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "workflow_id": "concert-live",
+  "display_name": "Concert Live Workflow",
+  "project_schema_version": 2,
+  "public_profile": "roy-public.example.json",
+  "required_review_gates": [
+    "rights",
+    "lyrics",
+    "edit",
+    "publish"
+  ],
+  "stages": [
+    "intake",
+    "rights-approved",
+    "lyrics-approved",
+    "timing-approved",
+    "rendered",
+    "deliverable-approved",
+    "publish-ready"
+  ],
+  "private_configuration": {
+    "environment_prefix": "ROY_EDITOR_",
+    "local_profile_directory": "profiles/private"
+  }
+}

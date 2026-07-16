@@ -41,3 +41,7 @@ packages = [
   "src/silent_vlog_maker",
   "src/platform_compat.py",
 ]
+
+[tool.hatch.build.targets.wheel.force-include]
+"profiles" = "roy_ai_editor/resources/profiles"
+"workflows" = "roy_ai_editor/resources/workflows"

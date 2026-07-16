@@ -112,6 +112,7 @@ def create_project(url: str, workspace: Path | None = None) -> tuple[Path, dict]
         "approved_deliverables": [],
         "review_gates": {
             "rights": "pending",
+            "lyrics": "pending",
             "edit": "pending",
             "publish": "pending",
         },

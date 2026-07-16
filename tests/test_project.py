@@ -60,6 +60,12 @@ def test_create_project_is_idempotent(tmp_path: Path) -> None:
     assert first["tracks"] == []
     assert first["evidence_artifacts"] == []
     assert first["approved_deliverables"] == []
+    assert first["review_gates"] == {
+        "rights": "pending",
+        "lyrics": "pending",
+        "edit": "pending",
+        "publish": "pending",
+    }
 
 
 def test_rights_gate_requires_explicit_approval(tmp_path: Path) -> None:

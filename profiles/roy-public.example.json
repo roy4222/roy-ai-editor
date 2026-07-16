@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "profile_id": "roy-public-example",
+  "display_name": "Roy Public Example",
+  "languages": {
+    "source": ["ja"],
+    "subtitle": ["ja", "zh-Hant"]
+  },
+  "editing_preferences": {
+    "approval_style": "explicit",
+    "preserve_song_outro": true,
+    "subtitle_style": "bilingual-karaoke",
+    "visual_qa": "burned-video-full-width"
+  },
+  "publication": {
+    "automatic_upload": false,
+    "rights_review_required": true
+  }
+}

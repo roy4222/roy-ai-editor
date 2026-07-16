@@ -11,6 +11,7 @@ from pathlib import Path
 
 from . import media
 from .alignment import transcribe
+from .customization import concert_live_status
 from .karaoke import render_file
 from .project import DEFAULT_WORKSPACE, approve_rights, create_project, load_project, require_rights_approval
 
@@ -55,6 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument("--evidence-url", required=True)
     approve.add_argument("--note", required=True)
     approve.add_argument("--approved-by", default="Roy")
+
+    workflow = commands.add_parser("workflow", help="Inspect or run a versioned Editing Workflow.")
+    workflow_commands = workflow.add_subparsers(dest="workflow_command")
+    concert_live = workflow_commands.add_parser("concert-live", help="Inspect a Concert Live Media Project.")
+    concert_live.add_argument("project", type=Path)
 
     download = commands.add_parser("download", help="Download an approved project's source with yt-dlp.")
     download.add_argument("project", type=Path)
@@ -139,6 +145,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             approved_by=args.approved_by,
         )
         print(json.dumps(manifest["rights"], ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "workflow" and args.workflow_command == "concert-live":
+        print(json.dumps(concert_live_status(args.project), ensure_ascii=False, indent=2))
         return 0
     if args.command == "download":
         manifest = load_project(args.project) if args.dry_run else require_rights_approval(args.project)

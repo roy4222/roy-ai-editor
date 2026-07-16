@@ -12,6 +12,12 @@ def test_parser_exposes_concert_create_workflow() -> None:
     assert args.url == "https://example.com/live"
 
 
+def test_parser_exposes_concert_live_workflow_entry() -> None:
+    args = build_parser().parse_args(["workflow", "concert-live", "/tmp/project"])
+    assert args.command == "workflow"
+    assert args.workflow_command == "concert-live"
+
+
 def test_cli_creates_a_standard_media_project(tmp_path: Path, capsys) -> None:
     assert main([
         "concert",
@@ -42,3 +48,18 @@ def test_download_requires_project_and_supports_approved_dry_run(tmp_path: Path,
     assert main(["download", str(project_dir), "--dry-run"]) == 0
     command = json.loads(capsys.readouterr().out)
     assert command[-1] == "https://youtu.be/x3nrUagsaV4"
+
+
+def test_concert_live_workflow_reads_manifest_without_inferring_approval(tmp_path: Path, capsys) -> None:
+    project_dir, _ = create_project("https://youtu.be/x3nrUagsaV4", tmp_path)
+    misleading_candidate = project_dir / "videos" / "review" / "final-v2.mp4"
+    misleading_candidate.write_bytes(b"not an approved deliverable")
+
+    assert main(["workflow", "concert-live", str(project_dir)]) == 0
+
+    status = json.loads(capsys.readouterr().out)
+    assert status["workflow"] == "concert-live"
+    assert status["project_id"] == "x3nrUagsaV4"
+    assert status["next_gate"] == "rights"
+    assert status["approved_deliverables"] == []
+    assert status["public_profile"] == "roy-public-example"
