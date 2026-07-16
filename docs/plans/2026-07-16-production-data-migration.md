@@ -35,3 +35,24 @@
 - 不以 deduplication 為由刪除來源或舊版本。
 - 不把 Production Assets、授權受限歌詞／翻譯、模型或 cache 加入 Git。
 - 任一步驗證失敗時，保留來源與已複製資料，修正分類或工具後續跑。
+
+## Reconciliation profiles
+
+真實專案的曲目與狀態透過 D 槽外部 JSON profile 傳給遷移器，不進公開 Repo：
+
+```console
+roy-editor migrate legacy LEGACY_SOURCE STANDARD_DESTINATION \
+  --reconciliation RECONCILIATION.json
+roy-editor migrate legacy LEGACY_SOURCE STANDARD_DESTINATION \
+  --reconciliation RECONCILIATION.json --execute
+```
+
+第一個命令只做完整 inventory、hash、route、reference 與 conflict 檢查；人工核對後才可執行第二個命令。Profile schema version 1 包含：
+
+- `project_id`、可選的 `source_url`；
+- `routes`：legacy source prefix 到標準 destination prefix 的決定性映射；
+- `project_assets` 與 `tracks[].legacy_assets`：目的地相對路徑引用；
+- 四個 `review_gates` 與 `gate_evidence`；任何 `approved` gate 都必須引用本次 plan 實際包含的 evidence；
+- 可選的 `rights`、`unresolved_conflicts` 與 `migration_notes`。
+
+遷移器會把每個 asset reference 補上 size 與 SHA-256，並拒絕 path traversal、重複 track ID、重複 destination、缺失 evidence、不同來源續跑與不同 profile 覆蓋。Legacy profile 不能直接宣告 Approved Deliverables；這仍須走獨立的 Roy 明確核准流程。

@@ -107,6 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
     legacy = migrate_commands.add_parser("legacy", help="Copy and verify a Legacy Media Project.")
     legacy.add_argument("source", type=Path)
     legacy.add_argument("destination", type=Path)
+    legacy.add_argument("--reconciliation", type=Path)
     legacy.add_argument("--execute", action="store_true")
 
     download = commands.add_parser("download", help="Download an approved project's source with yt-dlp.")
@@ -247,7 +248,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(concert_live_status(args.project), ensure_ascii=False, indent=2))
         return 0
     if args.command == "migrate" and args.migrate_command == "legacy":
-        report = migrate_legacy(args.source, args.destination, execute=args.execute)
+        report = migrate_legacy(
+            args.source,
+            args.destination,
+            execute=args.execute,
+            reconciliation=args.reconciliation,
+        )
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
     if args.command == "download":
