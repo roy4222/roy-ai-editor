@@ -110,6 +110,17 @@ Rendering alone leaves the candidate in `videos/review/` and `subtitles/draft/`.
 Only the second command selects content under the approved directories and updates
 `approved_deliverables` in the Project Manifest.
 
+Build a local publish package from that Approved Deliverable:
+
+```bash
+uv run roy-editor concert package-deliverable PROJECT_DIR TRACK_ID \
+  --metadata publish-metadata.json --thumbnail thumbnail.png
+```
+
+The metadata must include title, description, credits, and rights status/warnings.
+The package contains verified copies and explicitly records `upload_performed: false`;
+this command never contacts YouTube or another publishing service.
+
 ## Upstream Foundation
 
 The upstream framework now lives at the repository root. Start with:

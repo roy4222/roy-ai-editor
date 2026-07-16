@@ -16,6 +16,7 @@ from .deliverables import approve_deliverable, render_track
 from .karaoke import render_file
 from .lyrics import approve_lyrics
 from .project import DEFAULT_WORKSPACE, approve_rights, create_project, load_project, require_rights_approval
+from .publish import package_deliverable
 from .timing import approve_timing
 
 UPSTREAM_FOUNDATION_COMMIT = "fd45f0e876219d98fbcba11a38a8513b88309bdf"
@@ -80,6 +81,11 @@ def build_parser() -> argparse.ArgumentParser:
     approve_deliverable_parser.add_argument("track_id")
     approve_deliverable_parser.add_argument("--approved-by", default="Roy")
     approve_deliverable_parser.add_argument("--note", required=True)
+    package_parser = concert_commands.add_parser("package-deliverable", help="Build a local package for human publishing.")
+    package_parser.add_argument("project", type=Path)
+    package_parser.add_argument("track_id")
+    package_parser.add_argument("--metadata", type=Path, required=True)
+    package_parser.add_argument("--thumbnail", type=Path, required=True)
 
     workflow = commands.add_parser("workflow", help="Inspect or run a versioned Editing Workflow.")
     workflow_commands = workflow.add_subparsers(dest="workflow_command")
@@ -201,6 +207,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             note=args.note,
         )
         print(json.dumps(deliverable, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "concert" and args.concert_command == "package-deliverable":
+        package = package_deliverable(args.project, args.track_id, args.metadata, args.thumbnail)
+        print(json.dumps(package, ensure_ascii=False, indent=2))
         return 0
     if args.command == "workflow" and args.workflow_command == "concert-live":
         print(json.dumps(concert_live_status(args.project), ensure_ascii=False, indent=2))

@@ -12,7 +12,7 @@ from .karaoke import render_file
 from .project import load_project, record_evidence, save_project
 
 
-def _sha256(path: Path) -> str:
+def hash_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -21,9 +21,9 @@ def _sha256(path: Path) -> str:
 
 
 def _copy_immutable(source: Path, destination: Path) -> str:
-    source_sha = _sha256(source)
+    source_sha = hash_file(source)
     if destination.exists():
-        if _sha256(destination) != source_sha:
+        if hash_file(destination) != source_sha:
             raise RuntimeError(f"Approved artifact already exists with different content: {destination}")
     else:
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -53,9 +53,9 @@ def render_track(project_dir: Path, track_id: str, source_video: Path, *, font: 
         "created_at": datetime.now(UTC).isoformat(),
         "probe": probe,
         "qa": qa,
-        "subtitle_sha256": _sha256(subtitle_path),
+        "subtitle_sha256": hash_file(subtitle_path),
         "track_id": track_id,
-        "video_sha256": _sha256(video_path),
+        "video_sha256": hash_file(video_path),
         "visual_review_required": True,
     }, directory="qa")
     candidate = {
