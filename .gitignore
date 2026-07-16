@@ -1,35 +1,67 @@
-.venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-dist/
-build/
-*.egg-info/
-
+# Private customization (public examples and profiles remain versioned)
+profiles/private/
+profiles/*.local.md
+config.py
+*.local.*
+config.local.*
 .env
 .env.*
 !.env.example
 
-config.local.*
+# Production assets and generated media
 workspace/
 downloads/
 cache/
 renders/
 exports/
 artifacts/
+assets/
+videos/
+raw/
+export/
+_intake_bak/
+*_bak/
 *.mp4
 *.mkv
 *.mov
 *.webm
+*.mp3
 *.wav
+*.m4a
 *.flac
+*.png
+*.jpg
+*.jpeg
+*.gif
 *.part
 *.ytdl
 
+# CapCut drafts
+*draft_content.json
+*draft_info.json
+com.lveditor.draft/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# OS and editors
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+*.tmp
+
+# Reproduction and scratch files
+_repro*
+_scratch*
+*.repro.py
