@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 from roy_ai_editor.deliverables import hash_file
@@ -125,3 +126,56 @@ def test_final_migration_verification_does_not_finalize_when_hash_changed(tmp_pa
     assert any("destination hash mismatch" in error for error in result["projects"][0]["errors"])
     assert load_project(project)["migration"]["source_legacy_boundary"] == "logical-read-only-candidate"
     assert "boundary_registry" not in result
+
+
+def test_final_verifier_accepts_ntfs_subsecond_mtime_truncation(tmp_path: Path) -> None:
+    source = tmp_path / "legacy"
+    destination = tmp_path / "projects" / "show"
+    source.mkdir()
+    copied = destination / "work" / "asset.txt"
+    copied.parent.mkdir(parents=True)
+    original = source / "asset.txt"
+    original.write_text("same bytes", encoding="utf-8")
+    copied.write_bytes(original.read_bytes())
+    second = 1_700_000_000
+    os.utime(original, ns=(second * 1_000_000_000 + 900_000_000,) * 2)
+    os.utime(copied, ns=(second * 1_000_000_000,) * 2)
+    report = destination / "qa" / "legacy-migration-0123456789abcdef.json"
+    report.parent.mkdir()
+    action = {
+        "source": "asset.txt",
+        "destination": "work/asset.txt",
+        "source_class": "root",
+        "destination_class": "work",
+        "size": original.stat().st_size,
+        "mtime_ns": original.stat().st_mtime_ns,
+        "sha256": hash_file(original),
+        "action": "skip",
+    }
+    report.write_text(json.dumps({"actions": [action]}), encoding="utf-8")
+    save_project(destination, {
+        "project_id": "show",
+        "tracks": [],
+        "project_assets": {},
+        "evidence_artifacts": [],
+        "approved_deliverables": [],
+        "review_gates": {"rights": "pending", "lyrics": "pending", "edit": "pending", "publish": "pending"},
+        "migration": {
+            "source": str(source),
+            "report": "qa/legacy-migration-0123456789abcdef.json",
+            "source_inventory_sha256": "ignored-for-this-fixture",
+            "source_legacy_boundary": "logical-read-only-candidate",
+        },
+    })
+    manifest = load_project(destination)
+    manifest["migration"].pop("source_inventory_sha256")
+    save_project(destination, manifest)
+
+    result = verify_migrated_projects(
+        tmp_path / "projects",
+        ["show"],
+        tmp_path / "verification",
+        finalize_boundaries=False,
+    )
+
+    assert result["status"] == "PASS"

@@ -135,6 +135,15 @@ def _inventory_digest(items: list[dict]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _ordered_inventory_digest(items: list[dict]) -> str:
+    canonical = json.dumps(items, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _same_filesystem_second(left_ns: int, right_ns: int) -> bool:
+    return left_ns // 1_000_000_000 == right_ns // 1_000_000_000
+
+
 def _asset_references(manifest: dict) -> list[dict]:
     references: list[dict] = []
 
@@ -276,9 +285,15 @@ def _verify_project(project_dir: Path, expected_project_id: str, production_root
             if actual_hash != expected_hash:
                 errors.append(f"destination hash mismatch: {action['destination']}")
             expected_mtime = action.get("mtime_ns")
-            if expected_mtime is not None and destination_path.stat().st_mtime_ns != expected_mtime:
+            if expected_mtime is not None and not _same_filesystem_second(
+                destination_path.stat().st_mtime_ns,
+                expected_mtime,
+            ):
                 errors.append(f"destination mtime mismatch: {action['destination']}")
-            if source_path.is_file() and destination_path.stat().st_mtime_ns != source_path.stat().st_mtime_ns:
+            if source_path.is_file() and not _same_filesystem_second(
+                destination_path.stat().st_mtime_ns,
+                source_path.stat().st_mtime_ns,
+            ):
                 errors.append(f"source/destination mtime mismatch: {action['destination']}")
 
     references = _asset_references(manifest)
@@ -374,8 +389,9 @@ def _verify_project(project_dir: Path, expected_project_id: str, production_root
         if not path.startswith("subtitles/archive/"):
             errors.append(f"subtitle is not mapped to a track or explicit archive: {path}")
     source_inventory_sha = _inventory_digest(source_items)
+    migration_order_inventory_sha = _ordered_inventory_digest(source_items)
     recorded_inventory_sha = migration.get("source_inventory_sha256")
-    if recorded_inventory_sha and source_inventory_sha != recorded_inventory_sha:
+    if recorded_inventory_sha and migration_order_inventory_sha != recorded_inventory_sha:
         errors.append("source inventory digest does not match Project Manifest")
     return {
         "project_id": expected_project_id,
@@ -385,6 +401,7 @@ def _verify_project(project_dir: Path, expected_project_id: str, production_root
             "file_count": len(source_items),
             "total_size": sum(item["size"] for item in source_items),
             "inventory_sha256": source_inventory_sha,
+            "migration_order_inventory_sha256": migration_order_inventory_sha,
         },
         "destination": {
             "root": str(project_dir),
@@ -399,6 +416,7 @@ def _verify_project(project_dir: Path, expected_project_id: str, production_root
             "generated_files": generated_files,
             "unknown_file_count": len(unknown_destination_files),
             "count_difference_explanation": "Generated Project Manifest and immutable verification/migration evidence are excluded from copied-file parity.",
+            "mtime_comparison": "Source inventory retains nanoseconds; source/destination parity is normalized to whole seconds across the Windows NTFS/WSL copy boundary.",
         },
         "manifest_references": {"count": len(references), "verified": len(references) - sum(error.startswith("manifest reference") for error in errors)},
         "media": {"count": len(media_results), "files": media_results},
