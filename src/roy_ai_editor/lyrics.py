@@ -100,6 +100,11 @@ def prepare_lyrics_packet(project_dir: Path, packet_path: Path) -> dict:
         }
         manifest.setdefault("tracks", []).append(track)
         manifest["tracks"].sort(key=lambda item: item["number"])
+        manifest["review_gates"].update({
+            "lyrics": "pending",
+            "edit": "pending",
+            "publish": "pending",
+        })
     track["lyrics_candidate"] = candidate
     manifest.setdefault("evidence_artifacts", []).append(evidence)
     manifest["stage"] = "lyrics-review-required" if status == "review-required" else "lyrics-blocked"
@@ -143,6 +148,12 @@ def approve_lyrics(
         (item for item in manifest.get("tracks", []) if item.get("track_id") == track_id),
         None,
     )
+    same_content = existing_track and existing_track.get("lyrics", {}).get("sha256") == lyrics_sha
+    has_downstream_state = existing_track and any(
+        key in existing_track for key in ("timing", "render_candidate", "approved_deliverable_id")
+    )
+    previous_stage = manifest.get("stage")
+    previous_status = manifest.get("status")
     track = {
         **(existing_track or {}),
         "track_id": track_id,
@@ -167,7 +178,22 @@ def approve_lyrics(
         item.get("lyrics", {}).get("status") == "approved" for item in manifest["tracks"]
     )
     manifest["review_gates"]["lyrics"] = "approved" if all_tracks_approved else "pending"
-    manifest["stage"] = "lyrics-approved" if all_tracks_approved else "partially-lyrics-approved"
-    manifest["status"] = manifest["stage"]
+    approved_deliverable_tracks = {
+        item["track_id"]
+        for item in manifest.get("approved_deliverables", [])
+        if item.get("status") == "approved"
+    }
+    all_tracks_edited = bool(manifest["tracks"]) and all(
+        item["track_id"] in approved_deliverable_tracks for item in manifest["tracks"]
+    )
+    manifest["review_gates"]["edit"] = "approved" if all_tracks_edited else "pending"
+    if not all_tracks_edited:
+        manifest["review_gates"]["publish"] = "pending"
+    if same_content and has_downstream_state:
+        manifest["stage"] = previous_stage
+        manifest["status"] = previous_status
+    else:
+        manifest["stage"] = "lyrics-approved" if all_tracks_approved else "partially-lyrics-approved"
+        manifest["status"] = manifest["stage"]
     save_project(project_dir, manifest)
     return track

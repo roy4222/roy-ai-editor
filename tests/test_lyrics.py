@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from roy_ai_editor.cli import main
+from roy_ai_editor.lyrics import prepare_lyrics_packet
 from roy_ai_editor.project import approve_rights, create_project, load_project
 
 
@@ -118,3 +119,42 @@ def test_cli_prepares_but_blocks_a_lyrics_packet_with_unknown_rights(tmp_path: P
             "concert", "approve-lyrics", str(project_dir), str(prepared),
             "--approved-by", "Roy", "--note", "Do not approve unknown rights",
         ])
+
+
+def test_adding_a_track_invalidates_project_wide_downstream_gates(tmp_path: Path) -> None:
+    from roy_ai_editor.project import save_project
+
+    project_dir, _ = create_project("https://youtu.be/x3nrUagsaV4", tmp_path)
+    manifest = approve_rights(project_dir, evidence_url="https://example.com/policy", note="Roy approved")
+    manifest["tracks"] = [{
+        "track_id": "001-existing",
+        "number": 1,
+        "lyrics": {"status": "approved"},
+        "approved_deliverable_id": "001-existing-karaoke-v1",
+    }]
+    manifest["approved_deliverables"] = [{
+        "deliverable_id": "001-existing-karaoke-v1",
+        "track_id": "001-existing",
+        "status": "approved",
+    }]
+    manifest["review_gates"].update({"lyrics": "approved", "edit": "approved", "publish": "approved"})
+    save_project(project_dir, manifest)
+    draft = tmp_path / "new-track.json"
+    draft.write_text(json.dumps({
+        "packet_version": 1,
+        "track_number": 2,
+        "slug": "new-track",
+        "title": "New Track",
+        "source": {
+            "url": "https://example.com/new-lyrics",
+            "reuse_status": "unknown",
+            "rights_warnings": ["Needs review"],
+        },
+        "lines": [{"id": "L001", "japanese": "新曲", "translation": "新歌"}],
+    }, ensure_ascii=False), encoding="utf-8")
+
+    prepare_lyrics_packet(project_dir, draft)
+    current = load_project(project_dir)
+    assert current["review_gates"]["lyrics"] == "pending"
+    assert current["review_gates"]["edit"] == "pending"
+    assert current["review_gates"]["publish"] == "pending"
