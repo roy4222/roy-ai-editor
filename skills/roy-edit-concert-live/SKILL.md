@@ -14,7 +14,7 @@ Produce review-ready song clips through the `roy-ai-editor` project. Treat Codex
 3. Read `references/lyrics-approval-gate.md` before searching, selecting, translating, splitting, or aligning lyrics.
 4. Run `python scripts/bootstrap_repo.py` from this skill. If the Repo is missing, ask before running it again with `--install`; never clone silently.
 5. Work from the resolved Repo. Respect `ROY_AI_EDITOR_REPO` when set.
-6. Store large media outside Git. On Roy's Windows/WSL setup, default to `/mnt/d/VideoProjects/roy-ai-editor/`; otherwise ask for a workspace.
+6. Store large media outside Git. On Roy's Windows/WSL setup, default to `/mnt/d/VideoProjects/RoyAIEditor/`; otherwise ask for a workspace.
 7. Run `uv sync` and inspect `uv run roy-editor --help` before assuming a command exists.
 
 The CLI currently implements project creation, yt-dlp download, exact FFmpeg cuts, bilingual ASS generation with kanji-only furigana, subtitle burn-in, and FFprobe inspection. Fully automatic rights decisions, track discovery, lyrics acquisition, singing forced alignment, translation evaluation, multi-singer attribution, and YouTube upload are not implemented yet. Never claim a missing stage is automatic; prepare evidence/artifacts and stop at its review gate.
@@ -23,7 +23,7 @@ The CLI currently implements project creation, yt-dlp download, exact FFmpeg cut
 
 ```bash
 uv run roy-editor doctor
-uv run roy-editor concert create "URL" --workspace /mnt/d/VideoProjects/roy-ai-editor/projects
+uv run roy-editor concert create "URL" --workspace /mnt/d/VideoProjects/RoyAIEditor/projects
 uv run roy-editor concert approve-rights PROJECT --evidence-url "URL" --note "Roy approval note"
 uv run roy-editor download PROJECT
 uv run roy-editor cut SOURCE OUTPUT --start SECONDS --end SECONDS

@@ -32,7 +32,7 @@ uv run pytest
 
 ```bash
 uv run roy-editor concert create "YOUTUBE_URL" \
-  --workspace /mnt/d/VideoProjects/roy-ai-editor/projects
+  --workspace /mnt/d/VideoProjects/RoyAIEditor/projects
 ```
 
 ### 2. Record explicit rights approval, then download

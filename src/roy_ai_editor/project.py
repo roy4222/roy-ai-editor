@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -12,9 +14,66 @@ from urllib.parse import parse_qs, urlparse
 DEFAULT_WORKSPACE = Path(
     os.environ.get(
         "ROY_EDITOR_WORKSPACE",
-        "/mnt/d/VideoProjects/roy-ai-editor/projects",
+        "/mnt/d/VideoProjects/RoyAIEditor/projects",
     )
 )
+
+STANDARD_PROJECT_DIRECTORIES = (
+    "videos/source",
+    "videos/clips",
+    "videos/review",
+    "videos/approved",
+    "videos/archive",
+    "lyrics/sources",
+    "lyrics/approved",
+    "timing/alignment",
+    "timing/approved",
+    "subtitles/draft",
+    "subtitles/approved",
+    "subtitles/archive",
+    "approvals",
+    "qa",
+    "publish",
+    "work",
+)
+
+
+def _json_bytes(payload: object) -> bytes:
+    return (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _write_json_atomic(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = _json_bytes(payload)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False) as handle:
+            temp_path = Path(handle.name)
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if temp_path and temp_path.exists():
+            temp_path.unlink()
+
+
+def _write_evidence(project_dir: Path, kind: str, payload: object) -> dict:
+    data = _json_bytes(payload)
+    digest = hashlib.sha256(data).hexdigest()
+    relative_path = Path("approvals") / f"{kind}-{digest[:16]}.json"
+    evidence_path = project_dir / relative_path
+    if evidence_path.exists():
+        if evidence_path.read_bytes() != data:
+            raise RuntimeError(f"Evidence artifact collision: {evidence_path}")
+    else:
+        _write_json_atomic(evidence_path, payload)
+    return {
+        "id": f"evidence-{digest[:16]}",
+        "kind": kind,
+        "path": relative_path.as_posix(),
+        "sha256": digest,
+    }
 
 
 def source_id(url: str) -> str:
@@ -32,7 +91,7 @@ def source_id(url: str) -> str:
 def create_project(url: str, workspace: Path | None = None) -> tuple[Path, dict]:
     root = (workspace or DEFAULT_WORKSPACE).expanduser().resolve()
     project_dir = root / source_id(url)
-    for child in ("source", "lyrics", "timing", "subtitles", "renders", "qa", "publish"):
+    for child in STANDARD_PROJECT_DIRECTORIES:
         (project_dir / child).mkdir(parents=True, exist_ok=True)
 
     manifest_path = project_dir / "project.json"
@@ -40,23 +99,24 @@ def create_project(url: str, workspace: Path | None = None) -> tuple[Path, dict]
         return project_dir, json.loads(manifest_path.read_text(encoding="utf-8"))
 
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "project_id": project_dir.name,
+        "workflow": "concert-live",
         "source_url": url,
         "created_at": datetime.now(UTC).isoformat(),
+        "stage": "intake",
         "status": "intake",
         "rights": {"status": "pending", "evidence": []},
         "tracks": [],
+        "evidence_artifacts": [],
+        "approved_deliverables": [],
         "review_gates": {
             "rights": "pending",
             "edit": "pending",
             "publish": "pending",
         },
     }
-    manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    _write_json_atomic(manifest_path, manifest)
     return project_dir, manifest
 
 
@@ -86,25 +146,24 @@ def approve_rights(
 
     rights = manifest.setdefault("rights", {"status": "pending", "evidence": []})
     approvals = rights.setdefault("approvals", [])
-    approvals.append(
-        {
-            "approved_at": datetime.now(UTC).isoformat(),
-            "approved_by": approved_by.strip(),
-            "evidence_url": evidence_url.strip(),
-            "note": note.strip(),
-        }
-    )
+    approval = {
+        "approved_at": datetime.now(UTC).isoformat(),
+        "approved_by": approved_by.strip(),
+        "evidence_url": evidence_url.strip(),
+        "note": note.strip(),
+    }
+    reference = _write_evidence(project_dir, "rights-approval", approval)
+    approvals.append(approval)
     rights.update({
         "status": "approved",
-        "evidence": [*rights.get("evidence", []), {"url": evidence_url.strip(), "note": note.strip()}],
+        "evidence": [*rights.get("evidence", []), reference],
         "latest_approval": approvals[-1],
     })
+    manifest.setdefault("evidence_artifacts", []).append(reference)
     manifest["review_gates"]["rights"] = "approved"
+    manifest["stage"] = "rights-approved"
     manifest["status"] = "rights-approved"
-    (project_dir / "project.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    _write_json_atomic(project_dir / "project.json", manifest)
     return manifest
 
 

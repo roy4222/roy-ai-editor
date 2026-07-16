@@ -1,8 +1,30 @@
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
 
-from roy_ai_editor.project import approve_rights, create_project, require_rights_approval, source_id
+from roy_ai_editor.project import DEFAULT_WORKSPACE, approve_rights, create_project, require_rights_approval, source_id
+
+
+STANDARD_PROJECT_DIRECTORIES = {
+    "videos/source",
+    "videos/clips",
+    "videos/review",
+    "videos/approved",
+    "videos/archive",
+    "lyrics/sources",
+    "lyrics/approved",
+    "timing/alignment",
+    "timing/approved",
+    "subtitles/draft",
+    "subtitles/approved",
+    "subtitles/archive",
+    "approvals",
+    "qa",
+    "publish",
+    "work",
+}
 
 
 def test_source_id_reads_youtube_urls() -> None:
@@ -10,14 +32,34 @@ def test_source_id_reads_youtube_urls() -> None:
     assert source_id("https://youtu.be/x3nrUagsaV4") == "x3nrUagsaV4"
 
 
+def test_default_workspace_uses_the_production_data_root() -> None:
+    assert DEFAULT_WORKSPACE == Path("/mnt/d/VideoProjects/RoyAIEditor/projects")
+
+
 def test_create_project_is_idempotent(tmp_path: Path) -> None:
     first_dir, first = create_project("https://youtu.be/x3nrUagsaV4", tmp_path)
+
+    manifest_path = first_dir / "project.json"
+    persisted = json.loads(manifest_path.read_text(encoding="utf-8"))
+    persisted["operator_note"] = "preserve this current state"
+    manifest_path.write_text(json.dumps(persisted), encoding="utf-8")
+
     second_dir, second = create_project("https://youtu.be/x3nrUagsaV4", tmp_path)
 
     assert first_dir == second_dir
-    assert first == second
-    assert (first_dir / "project.json").exists()
-    assert (first_dir / "subtitles").is_dir()
+    assert second["operator_note"] == "preserve this current state"
+    assert manifest_path.exists()
+    assert STANDARD_PROJECT_DIRECTORIES <= {
+        str(path.relative_to(first_dir))
+        for path in first_dir.rglob("*")
+        if path.is_dir()
+    }
+    assert first["schema_version"] == 2
+    assert first["workflow"] == "concert-live"
+    assert first["stage"] == "intake"
+    assert first["tracks"] == []
+    assert first["evidence_artifacts"] == []
+    assert first["approved_deliverables"] == []
 
 
 def test_rights_gate_requires_explicit_approval(tmp_path: Path) -> None:
@@ -39,3 +81,21 @@ def test_rights_approval_rejects_blank_and_preserves_history(tmp_path: Path) -> 
     assert len(first["rights"]["approvals"]) == 1
     assert len(second["rights"]["approvals"]) == 2
     assert second["rights"]["approvals"][0]["note"] == "First review"
+
+
+def test_rights_approval_creates_content_verified_evidence(tmp_path: Path) -> None:
+    project_dir, _ = create_project("https://youtu.be/x3nrUagsaV4", tmp_path)
+
+    manifest = approve_rights(
+        project_dir,
+        evidence_url="https://example.com/policy",
+        note="Roy approved",
+    )
+
+    reference = manifest["evidence_artifacts"][-1]
+    evidence_path = project_dir / reference["path"]
+    content = evidence_path.read_bytes()
+    assert reference["id"].startswith("evidence-")
+    assert reference["kind"] == "rights-approval"
+    assert hashlib.sha256(content).hexdigest() == reference["sha256"]
+    assert json.loads(content)["approved_by"] == "Roy"
