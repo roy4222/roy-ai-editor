@@ -88,8 +88,6 @@ python examples/01_vertical_short.py
 python examples/02_caption_broll_match.py
 ```
 
-The previous `vendor/video-autopilot-kit` snapshot remains temporarily as a compatibility surface. It will be removed only after root-foundation parity, attribution, CLI, and test checks pass.
-
 To review future upstream updates safely:
 
 ```bash

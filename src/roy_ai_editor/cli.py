@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import shutil
 from collections.abc import Sequence
@@ -13,22 +14,28 @@ from .alignment import transcribe
 from .karaoke import render_file
 from .project import DEFAULT_WORKSPACE, approve_rights, create_project, load_project, require_rights_approval
 
-VENDORED_AUTOPILOT_COMMIT = "f15a5f99d58cbaedffb2590e76218bb85765331c"
+UPSTREAM_FOUNDATION_COMMIT = "fd45f0e876219d98fbcba11a38a8513b88309bdf"
+FOUNDATION_MODULES = (
+    "capcut_helpers",
+    "longform_maker",
+    "silent_vlog_maker",
+    "platform_compat",
+)
 
 
-def _vendor_dir() -> Path:
-    return Path(__file__).resolve().parents[2] / "vendor" / "video-autopilot-kit"
+def _foundation_root() -> Path:
+    checkout = Path(__file__).resolve().parents[2]
+    if (checkout / "SETUP.md").is_file():
+        return checkout
+
+    capcut_spec = importlib.util.find_spec("capcut_helpers")
+    if capcut_spec and capcut_spec.origin:
+        return Path(capcut_spec.origin).resolve().parents[1]
+    return checkout
 
 
-def _vendor_is_complete() -> bool:
-    vendor = _vendor_dir()
-    marker = vendor / "VENDORED_COMMIT"
-    return (
-        (vendor / "README.md").is_file()
-        and (vendor / "LICENSE").is_file()
-        and marker.is_file()
-        and marker.read_text(encoding="utf-8").strip() == VENDORED_AUTOPILOT_COMMIT
-    )
+def _foundation_is_complete() -> bool:
+    return all(importlib.util.find_spec(module_name) is not None for module_name in FOUNDATION_MODULES)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,7 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version="%(prog)s 0.2.0")
     commands = parser.add_subparsers(dest="command")
 
-    commands.add_parser("doctor", help="Check required executables and vendored tools.")
+    commands.add_parser("doctor", help="Check required executables and the Upstream Foundation.")
 
     concert = commands.add_parser("concert", help="Create a review-gated concert project.")
     concert_commands = concert.add_subparsers(dest="concert_command")
@@ -79,7 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
     align.add_argument("--model", default="large-v3")
     align.add_argument("--language", default="ja")
 
-    autopilot = commands.add_parser("autopilot", help="Locate the complete vendored video-autopilot-kit.")
+    autopilot = commands.add_parser("autopilot", help="Locate the installed Upstream Foundation.")
     autopilot.add_argument("--path-only", action="store_true")
 
     probe = commands.add_parser("probe", help="Print FFprobe JSON for an output file.")
@@ -98,7 +105,7 @@ def _doctor() -> int:
         "ffprobe": shutil.which("ffprobe"),
         "yt-dlp module": True,
         "pykakasi": True,
-        "vendored video-autopilot-kit": _vendor_is_complete(),
+        "upstream foundation": _foundation_is_complete(),
     }
     try:
         import yt_dlp  # noqa: F401
@@ -161,13 +168,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(args.output)
         return 0
     if args.command == "autopilot":
-        vendor = _vendor_dir()
-        if not _vendor_is_complete():
+        foundation = _foundation_root()
+        if not _foundation_is_complete():
             parser.error(
-                "vendored video-autopilot-kit is missing or does not match the pinned commit "
-                f"{VENDORED_AUTOPILOT_COMMIT}"
+                "Upstream Foundation modules are missing; reinstall roy-ai-editor from a complete build "
+                f"based on {UPSTREAM_FOUNDATION_COMMIT}"
             )
-        print(vendor if args.path_only else vendor / "README.md")
+        readme = foundation / "README.md"
+        print(foundation if args.path_only or not readme.is_file() else readme)
         return 0
 
     parser.print_help()

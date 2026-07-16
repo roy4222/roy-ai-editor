@@ -1,4 +1,13 @@
-# 🎬 video-autopilot-kit
+# Roy AI Editor
+
+Roy's local-first AI video editor. It is built directly on
+[Hao0321/video-autopilot-kit](https://github.com/Hao0321/video-autopilot-kit)
+as its Upstream Foundation, then adds versioned Roy capabilities, preferences,
+review gates, and Editing Workflows. Concert Live is the first product slice.
+
+Chinese product documentation: [README.md](README.md).
+
+## Upstream Foundation
 
 > A **framework**, not a hand-me-down config. Reusable pure-ffmpeg pipeline + CapCut
 > automation code, plus a questionnaire that asks about **your** channel and turns the
@@ -6,8 +15,6 @@
 >
 > ⚠️ **Ships with zero of the original author's private data** — voice, strategy, and
 > community numbers are all **blank templates** you fill in yourself.
-
-*(中文版見 [README.md](README.md))*
 
 ## 🧭 Which path should I use? (3-second decision tree)
 
@@ -96,6 +103,8 @@ person's private numbers. So this repo gives you the bones; you fill them with y
 
 MIT — keep the notice and use / modify / sell freely.
 
-## Author
+## Upstream attribution
 
-Hao0321 Studio — an open-source framework distilled from a real personal creator system.
+The Upstream Foundation was created by Hao0321 Studio and remains under MIT.
+Roy AI Editor preserves that lineage and attribution while adding Roy-owned product
+workflows. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

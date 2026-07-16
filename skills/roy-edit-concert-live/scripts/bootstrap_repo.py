@@ -8,8 +8,8 @@ import subprocess
 from pathlib import Path
 
 REPOSITORY = "https://github.com/roy4222/roy-ai-editor.git"
-RELEASE = "v0.2.0"
-AUTOPILOT_COMMIT = "f15a5f99d58cbaedffb2590e76218bb85765331c"
+RELEASE = "main"
+FOUNDATION_COMMIT = "fd45f0e876219d98fbcba11a38a8513b88309bdf"
 
 
 def candidates() -> list[Path]:
@@ -27,13 +27,16 @@ def candidates() -> list[Path]:
 
 
 def is_repo(path: Path) -> bool:
-    marker = path / "vendor" / "video-autopilot-kit" / "VENDORED_COMMIT"
+    notices = path / "THIRD_PARTY_NOTICES.md"
     return (
         (path / "pyproject.toml").exists()
         and (path / "skills" / "roy-edit-concert-live" / "SKILL.md").exists()
-        and (path / "vendor" / "video-autopilot-kit" / "LICENSE").exists()
-        and marker.exists()
-        and marker.read_text(encoding="utf-8").strip() == AUTOPILOT_COMMIT
+        and (path / "SETUP.md").exists()
+        and (path / "src" / "capcut_helpers").is_dir()
+        and (path / "src" / "longform_maker").is_dir()
+        and (path / "src" / "silent_vlog_maker").is_dir()
+        and notices.exists()
+        and FOUNDATION_COMMIT in notices.read_text(encoding="utf-8")
     )
 
 
@@ -60,7 +63,7 @@ def main() -> int:
         check=True,
     )
     if not is_repo(args.destination):
-        raise RuntimeError("Installed release failed the Skill/vendor integrity check")
+        raise RuntimeError("Installed release failed the Skill/foundation integrity check")
     print(args.destination.resolve())
     return 0
 

@@ -9,6 +9,8 @@ description = "Local-first AI video editor with a bilingual karaoke workflow"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "numpy>=1.26.0",
+  "Pillow>=10.0.0",
   "pykakasi>=2.3.0",
   "yt-dlp>=2025.1.1",
 ]
@@ -31,4 +33,10 @@ addopts = "-q"
 testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/roy_ai_editor"]
+packages = [
+  "src/roy_ai_editor",
+  "src/capcut_helpers",
+  "src/longform_maker",
+  "src/silent_vlog_maker",
+  "src/platform_compat.py",
+]
