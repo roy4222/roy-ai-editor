@@ -52,7 +52,7 @@ OpenRouter Image/Video API、ComfyUI 等生成素材 provider adapters
 | **僅參考** | [video-db/Director](https://github.com/video-db/Director) 的完整 runtime | MIT，但依賴 VideoDB service | 同上 | 最像 ChatGPT for video 的產品展示 | 難以維持真正 local-first，媒體索引與運算依賴外部服務 | 借介面與 agent 分工，不照搬基礎設施 |
 | **僅參考** | [jianfch/stable-ts](https://github.com/jianfch/stable-ts) | MIT | 約 2.3k stars；README 明示 indefinitely paused | Whisper 時間戳穩定化、silence suppression、refinement/regrouping | 已暫停開發 | 對齊後處理的演算法與 QA 概念；不作主依賴 |
 | **僅參考** | [OpenCut-app/OpenCut](https://github.com/OpenCut-app/OpenCut) | 以 repo 當下 LICENSE 為準 | 快速發展中的 open-source CapCut alternative | 瀏覽器時間軸 UI、典型 NLE 操作 | AI pipeline 與 backend 尚不是 Roy 的主線，專案 maturity 需另驗證 | 未來人工微調 timeline GUI 的 UX 參考 |
-| **僅參考** | [Hao0321/video-autopilot-kit](https://github.com/Hao0321/video-autopilot-kit) | 需在正式 vendor 前逐檔核對 | 原型工具包 | FFmpeg／Python 自動製片、字幕 QA、CapCut 草稿與模板技巧 | 不是通用 orchestration runtime；不能單獨完成 URL→版權→剪輯→翻譯→上傳 | 保留為現有 MVP 的 migration source 與 regression corpus |
+| **上游基礎** | [Hao0321/video-autopilot-kit](https://github.com/Hao0321/video-autopilot-kit) | MIT；整合時保留原始授權聲明 | 可客製化的影片製作框架 | FFmpeg／Python 自動製片、字幕 QA、CapCut 草稿、模板、profiles 與製作知識 | 不是完整 orchestration runtime；Roy 仍需補上 URL→權利→剪輯→翻譯→發布的產品流程 | 作為 Roy AI Editor 的 Upstream Foundation；在其骨架上加入 Roy Customization 與多個 Workflow |
 
 ## 最值得優先閱讀的三個 repo
 

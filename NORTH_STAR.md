@@ -222,23 +222,25 @@ flowchart LR
 
 ## 7. 產品與架構原則
 
-1. **通用核心，多個 Workflow／Skill**：Concert Clips 是第一個能力，不把 Repo 綁死在 HACHI、VTuber 或歌回。
-2. **Local-first**：素材與流程優先在本機可運作；雲端模型與儲存是可替換 provider。
-3. **確定性引擎＋AI 規劃師**：AI 產生結構化計畫／EDL，程式負責切割、時間、渲染與 QA。
-4. **模型可替換**：不綁 Codex 或最頂級模型；每個能力有清楚輸入輸出與 baseline，逐步降低成本。
-5. **可重播與可恢復**：任務、來源、模型版本、時間軸、產物與核准紀錄都能保存、重跑、快取與續跑。
-6. **來源與權利是一等資料**：找到內容、允許使用、署名要求與發布風險是不同欄位。
-7. **昂貴與不可逆操作先預覽**：生成式 API、上傳與公開發布先顯示成本／請求／風險，再等待批准。
-8. **低信心要誠實**：提供證據、信心與預覽，不用流暢文字掩蓋不確定性。
-9. **先做 Review UI，不重造完整 NLE**：未來 GUI 優先支援切點、字幕、翻譯與核准，不先複製 CapCut 全部功能。
-10. **自動化不能犧牲品味**：敘事、翻譯、音樂收尾與視覺設計必須能學習 Roy 的回饋。
+1. **站在既有基礎上客製**：Roy AI Editor 以 `Hao0321/video-autopilot-kit` 為 Upstream Foundation，再加入 Roy 專屬的 profiles、能力、Workflow 與品質標準，不在旁邊另做一套互不相干的產品。
+2. **通用核心，多個 Workflow／Skill**：Concert Clips 是第一個能力，不把 Repo 綁死在 HACHI、VTuber 或歌回。
+3. **Local-first 且程式／素材分離**：canonical source checkout 位於 WSL；真實 Media Projects 與 Production Assets 位於 D 槽。雲端模型與儲存是可替換 provider。
+4. **確定性引擎＋AI 規劃師**：AI 產生結構化計畫／EDL，程式負責切割、時間、渲染與 QA。
+5. **模型可替換**：不綁 Codex 或最頂級模型；每個能力有清楚輸入輸出與 baseline，逐步降低成本。
+6. **可重播、可恢復且位置固定**：每個 Media Project 採相同目錄契約，並以 Project Manifest 作為目前狀態的唯一真相；任務、來源、模型版本、時間軸、產物與核准紀錄都能保存、重跑、快取與續跑。
+7. **來源與權利是一等資料**：找到內容、允許使用、署名要求與發布風險是不同欄位。
+8. **昂貴與不可逆操作先預覽**：生成式 API、上傳與公開發布先顯示成本／請求／風險，再等待批准。
+9. **低信心要誠實**：提供證據、信心與預覽，不用流暢文字掩蓋不確定性。
+10. **先做 Review UI，不重造完整 NLE**：未來 GUI 優先支援切點、字幕、翻譯與核准，不先複製 CapCut 全部功能。
+11. **自動化不能犧牲品味**：敘事、翻譯、音樂收尾與視覺設計必須能學習 Roy 的回饋。
+12. **公開客製與私密資料分離**：Public Customization 可與程式碼共同發布；Private Configuration、Production Assets 與授權受限內容不得進入公開 Repo。
 
-## 8. 參考實作與角色
+## 8. 上游基礎、參考實作與角色
 
 詳細調查見 [[2026-07-12-ai-video-editor-open-source-landscape]]。
 
 - [browser-use/video-use](https://github.com/browser-use/video-use)：agent、逐字稿閱讀、EDL、review loop、cut-boundary self-eval。
-- [Hao0321/video-autopilot-kit](https://github.com/Hao0321/video-autopilot-kit)：現有 MVP 的 FFmpeg、字幕 QA、CapCut 與製作知識來源。
+- [Hao0321/video-autopilot-kit](https://github.com/Hao0321/video-autopilot-kit)：Roy AI Editor 的 Upstream Foundation；提供 FFmpeg、字幕 QA、CapCut、自動製片、模板與製作知識骨架，Roy 的客製能力與 Workflow 建立在其上。
 - [VideoLingo](https://github.com/Huanshere/VideoLingo)：字幕切分、翻譯、對齊與配音參考。
 - [WhisperX](https://github.com/m-bain/whisperX)：一般語音逐字時間與 forced alignment baseline。
 - [auto-editor](https://github.com/WyattBlue/auto-editor)：dead-space 粗剪與偵測參考，不能直接決定歌曲尾奏。
