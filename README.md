@@ -77,6 +77,18 @@ uv run roy-editor align vocals.wav aligned.json --model large-v3 --language ja
 
 Stable-ts timestamps are evidence, not authoritative lyrics. Map them to a trusted lyric source and review mora timing before release.
 
+Reconcile the forced-alignment JSON against the approved lyric artifact and explicitly
+approve the result:
+
+```bash
+uv run roy-editor concert approve-timing PROJECT_DIR TRACK_ID aligned.json \
+  --approved-by Roy --note "Reviewed token, whitespace, and line boundaries"
+```
+
+Zero-duration tokens and small cross-line overlaps are repaired within bounded rules.
+Any text mismatch or unresolved timing fault stops the command instead of changing the
+approved lyrics.
+
 ### 6. Render and burn karaoke
 
 ```bash

@@ -15,6 +15,7 @@ from .customization import concert_live_status
 from .karaoke import render_file
 from .lyrics import approve_lyrics
 from .project import DEFAULT_WORKSPACE, approve_rights, create_project, load_project, require_rights_approval
+from .timing import approve_timing
 
 UPSTREAM_FOUNDATION_COMMIT = "fd45f0e876219d98fbcba11a38a8513b88309bdf"
 FOUNDATION_MODULES = (
@@ -62,6 +63,12 @@ def build_parser() -> argparse.ArgumentParser:
     lyrics.add_argument("packet", type=Path)
     lyrics.add_argument("--approved-by", default="Roy")
     lyrics.add_argument("--note", required=True)
+    timing = concert_commands.add_parser("approve-timing", help="Reconcile and approve forced-alignment evidence.")
+    timing.add_argument("project", type=Path)
+    timing.add_argument("track_id")
+    timing.add_argument("alignment", type=Path)
+    timing.add_argument("--approved-by", default="Roy")
+    timing.add_argument("--note", required=True)
 
     workflow = commands.add_parser("workflow", help="Inspect or run a versioned Editing Workflow.")
     workflow_commands = workflow.add_subparsers(dest="workflow_command")
@@ -160,6 +167,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             note=args.note,
         )
         print(json.dumps(track, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "concert" and args.concert_command == "approve-timing":
+        timing_reference = approve_timing(
+            args.project,
+            args.track_id,
+            args.alignment,
+            approved_by=args.approved_by,
+            note=args.note,
+        )
+        print(json.dumps(timing_reference, ensure_ascii=False, indent=2))
         return 0
     if args.command == "workflow" and args.workflow_command == "concert-live":
         print(json.dumps(concert_live_status(args.project), ensure_ascii=False, indent=2))
