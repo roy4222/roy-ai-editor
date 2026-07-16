@@ -12,6 +12,7 @@ from pathlib import Path
 from . import media
 from .alignment import transcribe
 from .customization import concert_live_status
+from .deliverables import approve_deliverable, render_track
 from .karaoke import render_file
 from .lyrics import approve_lyrics
 from .project import DEFAULT_WORKSPACE, approve_rights, create_project, load_project, require_rights_approval
@@ -69,6 +70,16 @@ def build_parser() -> argparse.ArgumentParser:
     timing.add_argument("alignment", type=Path)
     timing.add_argument("--approved-by", default="Roy")
     timing.add_argument("--note", required=True)
+    render_track_parser = concert_commands.add_parser("render-track", help="Render an approved track as a review candidate.")
+    render_track_parser.add_argument("project", type=Path)
+    render_track_parser.add_argument("track_id")
+    render_track_parser.add_argument("source", type=Path)
+    render_track_parser.add_argument("--font", default="Noto Sans CJK JP")
+    approve_deliverable_parser = concert_commands.add_parser("approve-deliverable", help="Approve the rendered video/subtitle pair.")
+    approve_deliverable_parser.add_argument("project", type=Path)
+    approve_deliverable_parser.add_argument("track_id")
+    approve_deliverable_parser.add_argument("--approved-by", default="Roy")
+    approve_deliverable_parser.add_argument("--note", required=True)
 
     workflow = commands.add_parser("workflow", help="Inspect or run a versioned Editing Workflow.")
     workflow_commands = workflow.add_subparsers(dest="workflow_command")
@@ -177,6 +188,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             note=args.note,
         )
         print(json.dumps(timing_reference, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "concert" and args.concert_command == "render-track":
+        candidate = render_track(args.project, args.track_id, args.source, font=args.font)
+        print(json.dumps(candidate, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "concert" and args.concert_command == "approve-deliverable":
+        deliverable = approve_deliverable(
+            args.project,
+            args.track_id,
+            approved_by=args.approved_by,
+            note=args.note,
+        )
+        print(json.dumps(deliverable, ensure_ascii=False, indent=2))
         return 0
     if args.command == "workflow" and args.workflow_command == "concert-live":
         print(json.dumps(concert_live_status(args.project), ensure_ascii=False, indent=2))

@@ -97,6 +97,19 @@ uv run roy-editor karaoke burn song.mp4 lyrics.ass final.mp4
 uv run roy-editor probe final.mp4
 ```
 
+For a manifest-managed track, create a review candidate and then approve the exact
+video/subtitle pair only after inspecting the burned pixels and QA evidence:
+
+```bash
+uv run roy-editor concert render-track PROJECT_DIR TRACK_ID source.mp4
+uv run roy-editor concert approve-deliverable PROJECT_DIR TRACK_ID \
+  --approved-by Roy --note "Reviewed burned pixels, ruby, framing, and subtitles"
+```
+
+Rendering alone leaves the candidate in `videos/review/` and `subtitles/draft/`.
+Only the second command selects content under the approved directories and updates
+`approved_deliverables` in the Project Manifest.
+
 ## Upstream Foundation
 
 The upstream framework now lives at the repository root. Start with:
