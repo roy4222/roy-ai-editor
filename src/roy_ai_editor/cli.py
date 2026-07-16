@@ -15,6 +15,7 @@ from .customization import concert_live_status
 from .deliverables import approve_deliverable, render_track
 from .karaoke import render_file
 from .lyrics import approve_lyrics
+from .migration import migrate_legacy
 from .project import DEFAULT_WORKSPACE, approve_rights, create_project, load_project, require_rights_approval
 from .publish import package_deliverable
 from .timing import approve_timing
@@ -91,6 +92,13 @@ def build_parser() -> argparse.ArgumentParser:
     workflow_commands = workflow.add_subparsers(dest="workflow_command")
     concert_live = workflow_commands.add_parser("concert-live", help="Inspect a Concert Live Media Project.")
     concert_live.add_argument("project", type=Path)
+
+    migrate = commands.add_parser("migrate", help="Plan or execute non-destructive migrations.")
+    migrate_commands = migrate.add_subparsers(dest="migrate_command")
+    legacy = migrate_commands.add_parser("legacy", help="Copy and verify a Legacy Media Project.")
+    legacy.add_argument("source", type=Path)
+    legacy.add_argument("destination", type=Path)
+    legacy.add_argument("--execute", action="store_true")
 
     download = commands.add_parser("download", help="Download an approved project's source with yt-dlp.")
     download.add_argument("project", type=Path)
@@ -214,6 +222,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.command == "workflow" and args.workflow_command == "concert-live":
         print(json.dumps(concert_live_status(args.project), ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "migrate" and args.migrate_command == "legacy":
+        report = migrate_legacy(args.source, args.destination, execute=args.execute)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
     if args.command == "download":
         manifest = load_project(args.project) if args.dry_run else require_rights_approval(args.project)

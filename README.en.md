@@ -7,6 +7,11 @@ review gates, and Editing Workflows. Concert Live is the first product slice.
 
 Chinese product documentation: [README.md](README.md).
 
+Legacy media folders can be previewed and copied into the standard project layout with
+`roy-editor migrate legacy SOURCE DESTINATION [--execute]`. The default is a no-write
+dry run; execution copies without moving or deleting source files, verifies SHA-256
+content, and does not infer approved deliverables from legacy filenames.
+
 ## Upstream Foundation
 
 > A **framework**, not a hand-me-down config. Reusable pure-ffmpeg pipeline + CapCut

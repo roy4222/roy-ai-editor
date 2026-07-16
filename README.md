@@ -121,6 +121,28 @@ The metadata must include title, description, credits, and rights status/warning
 The package contains verified copies and explicitly records `upload_performed: false`;
 this command never contacts YouTube or another publishing service.
 
+## Legacy project migration
+
+Legacy folders remain the source of truth until a copy has been verified. Preview the
+complete file map first; dry-run mode does not create the destination:
+
+```bash
+uv run roy-editor migrate legacy \
+  /mnt/d/VideoProjects/LEGACY_PROJECT \
+  /mnt/d/VideoProjects/RoyAIEditor/projects/PROJECT_ID
+```
+
+After reviewing the JSON plan, execute the copy-and-verify pass explicitly:
+
+```bash
+uv run roy-editor migrate legacy SOURCE_DIR DESTINATION_DIR --execute
+```
+
+The command never deletes or moves source files, rejects symlinks and destinations
+inside the source tree, verifies every copied SHA-256, and records immutable migration
+evidence. Imported media and subtitles remain archived and unapproved until their
+project-specific tracks and review gates are reconciled.
+
 ## Upstream Foundation
 
 The upstream framework now lives at the repository root. Start with:
