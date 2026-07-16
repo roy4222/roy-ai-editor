@@ -16,6 +16,7 @@ from .deliverables import approve_deliverable, render_track
 from .karaoke import render_file
 from .lyrics import approve_lyrics, prepare_lyrics_packet
 from .migration import migrate_legacy
+from .migration_verification import verify_migrated_projects
 from .project import DEFAULT_WORKSPACE, approve_rights, create_project, load_project, require_rights_approval
 from .publish import package_deliverable
 from .timing import approve_timing, create_timing_candidate
@@ -109,6 +110,11 @@ def build_parser() -> argparse.ArgumentParser:
     legacy.add_argument("destination", type=Path)
     legacy.add_argument("--reconciliation", type=Path)
     legacy.add_argument("--execute", action="store_true")
+    verify_migration = migrate_commands.add_parser("verify", help="Independently verify migrated Media Projects.")
+    verify_migration.add_argument("projects_root", type=Path)
+    verify_migration.add_argument("project_ids", nargs="+")
+    verify_migration.add_argument("--output", type=Path, required=True)
+    verify_migration.add_argument("--finalize-boundaries", action="store_true")
 
     download = commands.add_parser("download", help="Download an approved project's source with yt-dlp.")
     download.add_argument("project", type=Path)
@@ -256,6 +262,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
+    if args.command == "migrate" and args.migrate_command == "verify":
+        report = verify_migrated_projects(
+            args.projects_root,
+            args.project_ids,
+            args.output,
+            finalize_boundaries=args.finalize_boundaries,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["status"] == "PASS" else 1
     if args.command == "download":
         manifest = load_project(args.project) if args.dry_run else require_rights_approval(args.project)
         _print_command(

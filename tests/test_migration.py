@@ -29,6 +29,10 @@ def test_legacy_migration_is_copy_verify_and_source_preserving(tmp_path: Path, c
     dry_run = json.loads(capsys.readouterr().out)
     assert dry_run["mode"] == "dry-run"
     assert dry_run["summary"] == {"copy": 3, "skip": 0, "conflict": 0}
+    assert all(action["mtime_ns"] > 0 for action in dry_run["actions"])
+    assert {action["destination_class"] for action in dry_run["actions"]} == {
+        "subtitles/archive", "videos/archive", "work/legacy-import",
+    }
     assert {action["action"] for action in dry_run["actions"]} == {"copy"}
     assert not destination.exists()
 
@@ -212,3 +216,44 @@ def test_reconciliation_rejects_duplicate_track_ids_and_destination_paths(tmp_pa
 
     with pytest.raises(ValueError, match="track_id values must be unique"):
         migrate_legacy(source, destination, execute=False, reconciliation=profile)
+
+
+def test_reconciliation_cannot_overwrite_generated_project_manifest(tmp_path: Path) -> None:
+    source = tmp_path / "legacy"
+    source.mkdir()
+    (source / "old.json").write_text("{}", encoding="utf-8")
+    destination = tmp_path / "projects" / "show"
+    profile = tmp_path / "profile.json"
+    profile.write_text(json.dumps({
+        "schema_version": 1,
+        "project_id": "show",
+        "routes": [{"source_prefix": "old.json", "destination_prefix": "project.json"}],
+        "tracks": [{"track_id": "01-song", "number": 1, "legacy_assets": {}}],
+        "review_gates": {"rights": "pending", "lyrics": "pending", "edit": "pending", "publish": "pending"},
+        "gate_evidence": {},
+    }), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="standard asset directory"):
+        migrate_legacy(source, destination, execute=False, reconciliation=profile)
+
+
+def test_reconciliation_rejects_nonstandard_or_directory_destinations(tmp_path: Path) -> None:
+    source = tmp_path / "legacy"
+    source.mkdir()
+    (source / "asset.mp4").write_bytes(b"video")
+    destination = tmp_path / "projects" / "show"
+    base = {
+        "schema_version": 1,
+        "project_id": "show",
+        "tracks": [{"track_id": "01-song", "number": 1, "legacy_assets": {}}],
+        "review_gates": {"rights": "pending", "lyrics": "pending", "edit": "pending", "publish": "pending"},
+        "gate_evidence": {},
+    }
+    for mapped in ("videos", "videos/bogus/asset.mp4"):
+        profile = tmp_path / f"{mapped.replace('/', '-')}.json"
+        profile.write_text(json.dumps({
+            **base,
+            "routes": [{"source_prefix": "asset.mp4", "destination_prefix": mapped}],
+        }), encoding="utf-8")
+        with pytest.raises(ValueError, match="standard asset directory"):
+            migrate_legacy(source, destination, execute=False, reconciliation=profile)

@@ -21,9 +21,12 @@ def _inventory(root: Path) -> list[dict]:
         if path.is_symlink():
             raise ValueError(f"legacy migration does not follow symlinks: {path}")
         if path.is_file():
+            relative = path.relative_to(root)
             files.append({
-                "path": path.relative_to(root).as_posix(),
+                "path": relative.as_posix(),
+                "class": relative.parts[0] if len(relative.parts) > 1 else "root",
                 "size": path.stat().st_size,
+                "mtime_ns": path.stat().st_mtime_ns,
                 "sha256": hash_file(path),
             })
     return files
@@ -100,6 +103,16 @@ def _destination(relative: Path) -> Path:
     return Path("work/legacy-import") / relative
 
 
+def _validate_asset_destination(relative: Path) -> None:
+    allowed_directories = [Path(directory) for directory in STANDARD_PROJECT_DIRECTORIES]
+    if not any(relative != directory and relative.is_relative_to(directory) for directory in allowed_directories):
+        raise ValueError(f"migration destination must be inside a standard asset directory: {relative}")
+    if relative.as_posix() == "project.json" or (
+        relative.parts[0] == "qa" and relative.name.startswith("legacy-migration-")
+    ):
+        raise ValueError(f"migration destination is reserved for generated control data: {relative}")
+
+
 def _destination_state(destination: Path, expected: set[str]) -> tuple[str, list[str], dict | None]:
     if not destination.exists():
         return "absent", [], None
@@ -137,6 +150,7 @@ def _plan(before: list[dict], destination: Path, routes: list[dict] | None = Non
     seen_destinations: set[str] = set()
     for item in before:
         relative = _route_destination(Path(item["path"]), routes or []).as_posix()
+        _validate_asset_destination(Path(relative))
         if relative in seen_destinations:
             raise ValueError(f"multiple legacy files map to the same destination: {relative}")
         seen_destinations.add(relative)
@@ -150,7 +164,10 @@ def _plan(before: list[dict], destination: Path, routes: list[dict] | None = Non
         actions.append({
             "source": item["path"],
             "destination": relative,
+            "source_class": item["class"],
+            "destination_class": "/".join(Path(relative).parts[:2]),
             "size": item["size"],
+            "mtime_ns": item["mtime_ns"],
             "sha256": item["sha256"],
             "action": action,
         })

@@ -56,3 +56,14 @@ roy-editor migrate legacy LEGACY_SOURCE STANDARD_DESTINATION \
 - 可選的 `rights`、`unresolved_conflicts` 與 `migration_notes`。
 
 遷移器會把每個 asset reference 補上 size 與 SHA-256，並拒絕 path traversal、重複 track ID、重複 destination、缺失 evidence、不同來源續跑與不同 profile 覆蓋。Legacy profile 不能直接宣告 Approved Deliverables；這仍須走獨立的 Roy 明確核准流程。
+
+三個專案都完成 copy／skip 驗證後，使用獨立 final verifier：
+
+```console
+roy-editor migrate verify D:\VideoProjects\RoyAIEditor\projects \
+  PROJECT_ID... \
+  --output D:\VideoProjects\RoyAIEditor\verification \
+  --finalize-boundaries
+```
+
+Verifier 會重新計算來源與目的 inventory/hash、驗證全部 Manifest references、以 `ffprobe` 檢查每支影片的影音 stream 與 duration、解析每個 ASS/SRT/VTT，並列出未引用字幕、額外目的檔、review gates、權利限制與版本衝突。只有 aggregate status 為 `PASS` 時，才會把三個 Manifest 的 legacy boundary 改為 `logical-read-only`，並建立帶 hash 的 boundary registry；這是邏輯邊界，不會修改 legacy source 的檔案屬性或內容。
