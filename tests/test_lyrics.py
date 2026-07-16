@@ -20,6 +20,8 @@ def write_packet(path: Path) -> None:
                     "url": "https://example.com/official-lyrics",
                     "translator": "Synthetic Fixture",
                     "reuse_status": "approved-for-test",
+                    "captured_at": "2026-07-16T00:00:00+00:00",
+                    "rights_warnings": [],
                 },
                 "lines": [
                     {"id": "L001", "japanese": "テスト", "translation": "合成測試"},
@@ -67,3 +69,37 @@ def test_cli_approves_a_traceable_lyrics_track(tmp_path: Path, capsys) -> None:
         "--approved-by", "Roy", "--note", "Synthetic fixture approved",
     ]) == 0
     assert len(load_project(project_dir)["tracks"]) == 1
+
+
+def test_cli_prepares_but_blocks_a_lyrics_packet_with_unknown_rights(tmp_path: Path, capsys) -> None:
+    project_dir, _ = create_project("https://youtu.be/x3nrUagsaV4", tmp_path)
+    approve_rights(project_dir, evidence_url="https://example.com/policy", note="Roy approved")
+    draft = tmp_path / "draft.json"
+    draft.write_text(json.dumps({
+        "packet_version": 1,
+        "track_number": 2,
+        "slug": "blocked-song",
+        "title": "Blocked Song",
+        "source": {
+            "url": "https://example.com/lyrics",
+            "reuse_status": "unknown",
+            "rights_warnings": ["Permission has not been confirmed"],
+        },
+        "lines": [{"id": "L001", "japanese": "歌", "translation": "歌"}],
+    }, ensure_ascii=False), encoding="utf-8")
+
+    assert main(["concert", "prepare-lyrics", str(project_dir), str(draft)]) == 0
+    candidate = json.loads(capsys.readouterr().out)
+    assert candidate["status"] == "blocked"
+    assert candidate["captured_at"]
+    prepared = project_dir / candidate["artifact"]
+    assert prepared.is_file()
+    manifest = load_project(project_dir)
+    assert manifest["tracks"][0]["lyrics_candidate"] == candidate
+    assert manifest["stage"] == "lyrics-blocked"
+
+    with pytest.raises(PermissionError, match="reuse status"):
+        main([
+            "concert", "approve-lyrics", str(project_dir), str(prepared),
+            "--approved-by", "Roy", "--note", "Do not approve unknown rights",
+        ])

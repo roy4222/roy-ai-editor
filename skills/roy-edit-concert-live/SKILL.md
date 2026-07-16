@@ -1,6 +1,6 @@
 ---
 name: roy-edit-concert-live
-description: Orchestrate a review-gated, manual-assisted concert workflow. The current deterministic tools create projects, rights-gated downloads, exact cuts, optional stable-ts timestamps, bilingual ASS with kanji furigana, burn-in, and probing; Codex manually researches rights/lyrics/translations and prepares metadata. Use when Roy asks Codex to 剪 Live、切歌、做歌回精華、翻譯演唱影片、製作卡拉 OK 字幕，or invokes $roy-edit-concert-live with a concert URL.
+description: Orchestrate a review-gated, manual-assisted concert workflow. The deterministic tools create projects, rights-gated downloads, exact cuts, traceable lyrics and timing candidates, bilingual ASS with kanji furigana, burned-pixel QA, explicit deliverables, and local publish packages. Use when Roy asks Codex to 剪 Live、切歌、做歌回精華、翻譯演唱影片、製作卡拉 OK 字幕，or invokes $roy-edit-concert-live with a concert URL.
 ---
 
 # Roy Edit Concert Live
@@ -17,7 +17,7 @@ Produce review-ready song clips through the `roy-ai-editor` project. Treat Codex
 6. Store large media outside Git. On Roy's Windows/WSL setup, default to `/mnt/d/VideoProjects/RoyAIEditor/`; otherwise ask for a workspace.
 7. Run `uv sync` and inspect `uv run roy-editor --help` before assuming a command exists.
 
-The CLI currently implements project creation, yt-dlp download, exact FFmpeg cuts, bilingual ASS generation with kanji-only furigana, subtitle burn-in, and FFprobe inspection. Fully automatic rights decisions, track discovery, lyrics acquisition, singing forced alignment, translation evaluation, multi-singer attribution, and YouTube upload are not implemented yet. Never claim a missing stage is automatic; prepare evidence/artifacts and stop at its review gate.
+The CLI implements project creation, yt-dlp download, exact FFmpeg cuts, lyrics packet preparation/approval, optional stable-ts forced-alignment candidates, bounded timing reconciliation, bilingual ASS generation, subtitle burn-in, burned-pixel QA, explicit Approved Deliverables, and local publish packages. Fully automatic rights decisions, track discovery, lyrics acquisition, translation evaluation, multi-singer attribution, and YouTube upload are not implemented. Never claim a missing stage is automatic; prepare evidence/artifacts and stop at its review gate.
 
 ## CLI sequence
 
@@ -29,19 +29,22 @@ uv run roy-editor download PROJECT
 uv run roy-editor cut SOURCE OUTPUT --start SECONDS --end SECONDS
 # STOP: present the versioned lyrics/translation/line-break approval packet.
 # Continue only after Roy explicitly approves that exact packet.
+uv run roy-editor concert prepare-lyrics PROJECT lyrics-packet.json
+uv run roy-editor concert approve-lyrics PROJECT PROJECT/lyrics/sources/TRACK-HASH.json --note "Roy approval note"
 uv sync --extra alignment
-uv run roy-editor align VOCALS.wav aligned.json --language ja
-uv run roy-editor karaoke render TIMING.json LYRICS.ass
-uv run roy-editor karaoke burn CLIP.mp4 LYRICS.ass FINAL.mp4
-uv run python scripts/karaoke_visual_qa.py FINAL.mp4 TIMING.json QA_DIR
-uv run roy-editor probe FINAL.mp4
+uv run roy-editor concert align-timing PROJECT TRACK_ID VOCALS.wav --model large-v3 --language ja
+uv run roy-editor concert approve-timing PROJECT TRACK_ID PROJECT/timing/alignment/TRACK-HASH.json --note "Roy timing review"
+uv run roy-editor concert render-track PROJECT TRACK_ID CLIP.mp4
+# STOP: inspect every full-width crop referenced by the render QA evidence.
+uv run roy-editor concert approve-deliverable PROJECT TRACK_ID --note "Roy pixel review"
+uv run roy-editor concert package-deliverable PROJECT TRACK_ID --metadata metadata.json --thumbnail thumbnail.png
 ```
 
 Use `examples/karaoke-timing.example.json` as the timing schema. Exact token timing is preferred. Automatically distributed timing is only a draft and must not be presented as precise singing alignment.
 
 Treat Roy's explicit approval of the exact lyrics packet as a hard gate. Before approval, do not align lyrics, create or modify song timing JSON, render ASS, burn a review/final video, or prepare upload metadata that claims a translation source. If any lyric source, translation, repeat, or display line break changes later, invalidate the approval and present a new packet.
 
-Do not approve ruby from ASS coordinates or a scaled full-frame screenshot. Run `scripts/karaoke_visual_qa.py` against the actually burned MP4, preserve the full 1920-pixel width while cropping only the subtitle-height band, and inspect every numbered lyric crop. Any clipped line, wrong reading, kana included in a ruby base span, or visibly off-center ruby fails the render gate.
+Do not approve ruby from ASS coordinates or a scaled full-frame screenshot. `render-track` records full-width subtitle-band crops from the actually burned MP4 and blocks automatic layout failures. Inspect every numbered crop. Any clipped line, wrong reading, kana included in a ruby base span, or visibly off-center ruby fails the manual render gate.
 
 ## Operating contract
 
@@ -68,7 +71,7 @@ For a new URL, return or persist:
 - the versioned lyrics/translation/line-break approval packet and Roy's approval status;
 - the approved source-line-to-display-line map, including repeats and any allowed two-line joins;
 - subtitle/alignment artifacts;
-- rendered clips and QA report when implemented;
+- rendered clips and hash-verified QA evidence;
 - YouTube title, description, credits, sources, and hashtags;
 - unresolved decisions and the next review gate.
 

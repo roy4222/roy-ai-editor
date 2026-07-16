@@ -31,7 +31,12 @@ def test_synthetic_concert_reaches_local_publish_package(tmp_path: Path, capsys)
         "track_number": 1,
         "slug": "synthetic-song",
         "title": "Synthetic Song",
-        "source": {"url": "https://example.com/synthetic-lyrics"},
+        "source": {
+            "url": "https://example.com/synthetic-lyrics",
+            "reuse_status": "approved-for-test",
+            "captured_at": "2026-07-16T00:00:00+00:00",
+            "rights_warnings": [],
+        },
         "lines": [
             {"id": "L001", "japanese": "テスト", "translation": "測試"},
             {"id": "L002", "japanese": "うた", "translation": "歌曲"},
@@ -85,7 +90,7 @@ def test_synthetic_concert_reaches_local_publish_package(tmp_path: Path, capsys)
         "title": "Synthetic Karaoke Clip",
         "description": "Local end-to-end fixture; do not upload.",
         "credits": ["Synthetic fixture"],
-        "rights": {"status": "reviewed", "warnings": ["Do not upload"]},
+        "rights": {"status": "approved", "warnings": ["Do not upload"]},
     }), encoding="utf-8")
     thumbnail = tmp_path / "thumbnail.png"
     thumbnail.write_bytes(b"synthetic thumbnail")

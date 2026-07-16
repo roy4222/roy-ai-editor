@@ -53,10 +53,19 @@ uv run roy-editor cut source.mp4 song.mp4 --start 2174.0 --end 2426.0
 ### 4. Approve a versioned lyrics packet
 
 Prepare a JSON packet containing a stable track number/slug, trusted source URL,
-translator/reuse notes, and `L001`-style paired lyric lines. After the rights gate:
+translator/reuse status, rights warnings, and `L001`-style paired lyric lines. After
+the rights gate, first persist a review candidate (the command adds `captured_at` when
+the draft omits it):
 
 ```bash
-uv run roy-editor concert approve-lyrics PROJECT_DIR lyrics-packet.json \
+uv run roy-editor concert prepare-lyrics PROJECT_DIR lyrics-packet.json
+```
+
+Unknown reuse status produces a blocked candidate. Approve only the prepared artifact
+after reviewing its exact source, translation, line map, and warnings:
+
+```bash
+uv run roy-editor concert approve-lyrics PROJECT_DIR PROJECT_DIR/lyrics/sources/TRACK-HASH.json \
   --approved-by Roy --note "Approved this exact source, translation, and line map"
 ```
 
@@ -68,14 +77,17 @@ approval; the command never silently overwrites an approved track artifact.
 
 Copy [examples/karaoke-timing.example.json](examples/karaoke-timing.example.json). Each line accepts exact token timing and explicit ruby spans. If tokens or ruby are omitted, the renderer produces a usable draft by distributing time and generating kanji readings; human review is still required for singing.
 
-Optional stable-ts transcription/alignment baseline:
+Create a manifest-tracked stable-ts forced-alignment candidate from the approved track
+and its audio:
 
 ```bash
 uv sync --extra alignment
-uv run roy-editor align vocals.wav aligned.json --model large-v3 --language ja
+uv run roy-editor concert align-timing PROJECT_DIR TRACK_ID vocals.wav \
+  --model large-v3 --language ja
 ```
 
-Stable-ts timestamps are evidence, not authoritative lyrics. Map them to a trusted lyric source and review mora timing before release.
+The audio, model, language, raw alignment hash, and candidate are recorded as Evidence.
+Stable-ts timestamps are not authoritative lyrics; review mora timing before approval.
 
 Reconcile the forced-alignment JSON against the approved lyric artifact and explicitly
 approve the result:
@@ -107,8 +119,10 @@ uv run roy-editor concert approve-deliverable PROJECT_DIR TRACK_ID \
 ```
 
 Rendering alone leaves the candidate in `videos/review/` and `subtitles/draft/`.
-Only the second command selects content under the approved directories and updates
-`approved_deliverables` in the Project Manifest.
+It also writes full-width burned-pixel crops plus automatic width, overlap, boundary,
+and ruby safe-area checks under `qa/`. A failed automatic check cannot be approved.
+Only the second command selects the hash-verified content under the approved directories
+and updates `approved_deliverables` in the Project Manifest.
 
 Build a local publish package from that Approved Deliverable:
 
@@ -217,7 +231,14 @@ If only the Skill folder is installed, its `scripts/bootstrap_repo.py` locates a
 
 ## Current boundary
 
-The current integration branch combines the root Upstream Foundation with Roy's deterministic toolkit for project creation, rights-gated download, exact cuts, optional stable-ts timestamps, ASS generation, subtitle burn-in, and probing. Fully automatic song discovery, lyrics acquisition/permission decisions, trusted-lyrics-to-singing alignment, translation evaluation, multi-singer attribution, and YouTube upload remain planned modules. The Skill must not claim those stages are implemented until their CLI and tests exist.
+The current integration branch combines the root Upstream Foundation with Roy's
+deterministic toolkit for project creation, rights-gated download, exact cuts, lyrics
+packet review, optional stable-ts forced-alignment candidates, bounded timing
+reconciliation, ASS generation, subtitle burn-in, pixel QA, explicit deliverable
+approval, and local publish packages. Fully automatic song discovery, lyrics
+acquisition/permission decisions, translation evaluation, multi-singer attribution,
+and YouTube upload remain planned modules. The Skill must not claim those stages are
+implemented until their CLI and tests exist.
 
 ## Third-party code
 

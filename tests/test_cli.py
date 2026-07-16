@@ -47,6 +47,7 @@ def test_download_requires_project_and_supports_approved_dry_run(tmp_path: Path,
 
     assert main(["download", str(project_dir), "--dry-run"]) == 0
     command = json.loads(capsys.readouterr().out)
+    assert str(project_dir / "videos" / "source" / "source.%(ext)s") in command
     assert command[-1] == "https://youtu.be/x3nrUagsaV4"
 
 

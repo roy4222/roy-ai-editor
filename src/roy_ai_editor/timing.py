@@ -3,10 +3,106 @@
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+from . import alignment
+from .deliverables import hash_file
 from .project import load_project, record_evidence, save_project, write_immutable_json
+
+
+def create_timing_candidate(
+    project_dir: Path,
+    track_id: str,
+    audio_path: Path,
+    *,
+    model_name: str,
+    language: str,
+) -> dict:
+    project_dir = project_dir.expanduser().resolve()
+    manifest = load_project(project_dir)
+    track = next((item for item in manifest.get("tracks", []) if item.get("track_id") == track_id), None)
+    if not track or track.get("lyrics", {}).get("status") != "approved":
+        raise PermissionError("forced alignment requires an approved lyrics track")
+    audio_path = audio_path.expanduser().resolve()
+    if not audio_path.is_file():
+        raise FileNotFoundError(audio_path)
+    audio_sha = hash_file(audio_path)
+    audio_relative = (
+        Path("videos") / "clips" /
+        f"{track_id}-alignment-audio-{audio_sha[:8]}{audio_path.suffix.lower() or '.wav'}"
+    )
+    project_audio = project_dir / audio_relative
+    created_audio = False
+    if project_audio.exists():
+        if hash_file(project_audio) != audio_sha:
+            raise RuntimeError(f"alignment audio conflict: {project_audio}")
+    else:
+        shutil.copy2(audio_path, project_audio)
+        created_audio = True
+
+    work_dir = project_dir / "work"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=work_dir,
+        prefix=f".{track_id}-alignment-",
+        suffix=".json",
+        delete=False,
+    ) as handle:
+        temporary = Path(handle.name)
+    try:
+        alignment.transcribe(
+            project_audio,
+            temporary,
+            model_name=model_name,
+            language=language,
+        )
+        alignment_payload = json.loads(temporary.read_text(encoding="utf-8"))
+        if not isinstance(alignment_payload.get("segments"), list) or not alignment_payload["segments"]:
+            raise ValueError("forced alignment produced no segments")
+        alignment_sha = hash_file(temporary)
+        alignment_relative = Path("timing") / "alignment" / f"{track_id}-{alignment_sha[:16]}.json"
+        alignment_artifact = project_dir / alignment_relative
+        if alignment_artifact.exists():
+            if hash_file(alignment_artifact) != alignment_sha:
+                raise RuntimeError(f"alignment artifact conflict: {alignment_artifact}")
+        else:
+            shutil.copy2(temporary, alignment_artifact)
+    except Exception:
+        if created_audio:
+            project_audio.unlink(missing_ok=True)
+        raise
+    finally:
+        temporary.unlink(missing_ok=True)
+
+    evidence = record_evidence(project_dir, "forced-alignment", {
+        "created_at": datetime.now(UTC).isoformat(),
+        "track_id": track_id,
+        "tool": "stable-ts",
+        "model": model_name,
+        "language": language,
+        "audio": {"path": audio_relative.as_posix(), "sha256": audio_sha},
+        "artifact": alignment_relative.as_posix(),
+        "sha256": alignment_sha,
+    }, directory="qa")
+    candidate = {
+        "status": "review-required",
+        "artifact": alignment_relative.as_posix(),
+        "sha256": alignment_sha,
+        "audio": {"path": audio_relative.as_posix(), "sha256": audio_sha},
+        "tool": "stable-ts",
+        "model": model_name,
+        "language": language,
+        "evidence_id": evidence["id"],
+    }
+    track["timing_candidate"] = candidate
+    manifest.setdefault("evidence_artifacts", []).append(evidence)
+    manifest["stage"] = "timing-review-required"
+    manifest["status"] = "timing-review-required"
+    save_project(project_dir, manifest)
+    return candidate
 
 
 def _without_space(text: str) -> str:
@@ -94,6 +190,7 @@ def approve_timing(
         raise ValueError("approved_by and note must not be blank")
 
     lyrics = json.loads((project_dir / track["lyrics"]["artifact"]).read_text(encoding="utf-8"))
+    input_alignment_sha = hash_file(alignment_path)
     alignment = json.loads(alignment_path.read_text(encoding="utf-8"))
     segments = alignment.get("segments") or []
     if len(segments) != len(lyrics["lines"]):
@@ -140,9 +237,21 @@ def approve_timing(
     timing = {"schema_version": 1, "track_id": track_id, "lines": lines}
     timing_relative = Path("timing") / "approved" / f"{track_id}.json"
     timing_sha = write_immutable_json(project_dir / timing_relative, timing)
+    candidate = track.get("timing_candidate", {})
+    candidate_matches = candidate.get("sha256") == input_alignment_sha
     evidence = record_evidence(project_dir, "timing-approval", {
         "alignment_artifact": alignment_relative.as_posix(),
         "alignment_sha256": alignment_sha,
+        "input_alignment_sha256": input_alignment_sha,
+        "alignment_parameters": {
+            "tool": candidate.get("tool", "external") if candidate_matches else "external",
+            "model": candidate.get("model", "unknown") if candidate_matches else alignment.get("model", "unknown"),
+            "language": (
+                candidate.get("language", "unknown")
+                if candidate_matches
+                else alignment.get("language", "unknown")
+            ),
+        },
         "approved_at": datetime.now(UTC).isoformat(),
         "approved_by": approved_by.strip(),
         "boundary_repairs": boundary_repairs,
@@ -161,6 +270,8 @@ def approve_timing(
         "approval_evidence_id": evidence["id"],
     }
     track["timing"] = timing_reference
+    if candidate_matches:
+        track["timing_candidate"]["status"] = "approved"
     manifest.setdefault("evidence_artifacts", []).append(evidence)
     manifest["stage"] = "timing-approved"
     manifest["status"] = "timing-approved"

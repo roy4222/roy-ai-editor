@@ -14,11 +14,11 @@ from .alignment import transcribe
 from .customization import concert_live_status
 from .deliverables import approve_deliverable, render_track
 from .karaoke import render_file
-from .lyrics import approve_lyrics
+from .lyrics import approve_lyrics, prepare_lyrics_packet
 from .migration import migrate_legacy
 from .project import DEFAULT_WORKSPACE, approve_rights, create_project, load_project, require_rights_approval
 from .publish import package_deliverable
-from .timing import approve_timing
+from .timing import approve_timing, create_timing_candidate
 
 UPSTREAM_FOUNDATION_COMMIT = "fd45f0e876219d98fbcba11a38a8513b88309bdf"
 FOUNDATION_MODULES = (
@@ -61,11 +61,20 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument("--evidence-url", required=True)
     approve.add_argument("--note", required=True)
     approve.add_argument("--approved-by", default="Roy")
+    prepare_lyrics = concert_commands.add_parser("prepare-lyrics", help="Prepare a traceable lyrics approval packet.")
+    prepare_lyrics.add_argument("project", type=Path)
+    prepare_lyrics.add_argument("packet", type=Path)
     lyrics = concert_commands.add_parser("approve-lyrics", help="Approve a versioned lyrics packet as a track.")
     lyrics.add_argument("project", type=Path)
     lyrics.add_argument("packet", type=Path)
     lyrics.add_argument("--approved-by", default="Roy")
     lyrics.add_argument("--note", required=True)
+    align_timing = concert_commands.add_parser("align-timing", help="Create a forced-alignment timing candidate.")
+    align_timing.add_argument("project", type=Path)
+    align_timing.add_argument("track_id")
+    align_timing.add_argument("audio", type=Path)
+    align_timing.add_argument("--model", default="large-v3")
+    align_timing.add_argument("--language", default="ja")
     timing = concert_commands.add_parser("approve-timing", help="Reconcile and approve forced-alignment evidence.")
     timing.add_argument("project", type=Path)
     timing.add_argument("track_id")
@@ -184,6 +193,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps(manifest["rights"], ensure_ascii=False, indent=2))
         return 0
+    if args.command == "concert" and args.concert_command == "prepare-lyrics":
+        candidate = prepare_lyrics_packet(args.project, args.packet)
+        print(json.dumps(candidate, ensure_ascii=False, indent=2))
+        return 0
     if args.command == "concert" and args.concert_command == "approve-lyrics":
         track = approve_lyrics(
             args.project,
@@ -192,6 +205,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             note=args.note,
         )
         print(json.dumps(track, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "concert" and args.concert_command == "align-timing":
+        candidate = create_timing_candidate(
+            args.project,
+            args.track_id,
+            args.audio,
+            model_name=args.model,
+            language=args.language,
+        )
+        print(json.dumps(candidate, ensure_ascii=False, indent=2))
         return 0
     if args.command == "concert" and args.concert_command == "approve-timing":
         timing_reference = approve_timing(
@@ -232,7 +255,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _print_command(
             media.download(
                 manifest["source_url"],
-                args.project.expanduser().resolve() / "source",
+                args.project.expanduser().resolve() / "videos" / "source",
                 dry_run=args.dry_run,
             )
         )

@@ -13,9 +13,14 @@
   "stages": [
     "intake",
     "rights-approved",
+    "lyrics-review-required",
+    "lyrics-blocked",
+    "partially-lyrics-approved",
     "lyrics-approved",
+    "timing-review-required",
     "timing-approved",
     "rendered",
+    "partially-deliverable-approved",
     "deliverable-approved",
     "publish-ready"
   ],

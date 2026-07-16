@@ -6,6 +6,7 @@ import json
 import shutil
 from pathlib import Path
 
+from .customization import load_public_profile, load_workflow
 from .deliverables import hash_file
 from .project import load_project, save_project, write_immutable_json
 
@@ -38,7 +39,17 @@ def package_deliverable(
     )
     if not deliverable:
         raise PermissionError("publish packaging requires an Approved Deliverable")
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    for kind in ("video", "subtitle"):
+        reference = deliverable[kind]
+        if hash_file(project_dir / reference["path"]) != reference.get("sha256"):
+            raise RuntimeError(f"Approved Deliverable hash mismatch: {kind}")
+    provided_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    workflow = load_workflow(manifest.get("workflow", "concert-live"))
+    profile = load_public_profile(workflow["public_profile"])
+    metadata = {
+        **profile.get("publication", {}).get("metadata_defaults", {}),
+        **provided_metadata,
+    }
     if not all(str(metadata.get(field, "")).strip() for field in ("title", "description")):
         raise ValueError("publish metadata requires title and description")
     if not isinstance(metadata.get("credits"), list) or not metadata["credits"]:
@@ -46,6 +57,21 @@ def package_deliverable(
     rights = metadata.get("rights", {})
     if not str(rights.get("status", "")).strip() or not isinstance(rights.get("warnings"), list):
         raise ValueError("publish metadata requires rights status and warnings")
+    project_rights = manifest.get("rights", {})
+    if project_rights.get("status") != "approved":
+        raise PermissionError("publish packaging requires approved project rights")
+    if rights["status"] != project_rights["status"]:
+        raise ValueError("publish metadata rights status must match the Project Manifest")
+    metadata["rights"] = {
+        **rights,
+        "source_url": manifest.get("source_url"),
+        "evidence": project_rights.get("evidence", []),
+    }
+    metadata["public_profile"] = profile["profile_id"]
+    metadata["project"] = {
+        "project_id": manifest["project_id"],
+        "workflow": manifest["workflow"],
+    }
     if not thumbnail_path.is_file():
         raise FileNotFoundError(thumbnail_path)
 
@@ -66,6 +92,7 @@ def package_deliverable(
         "files": files,
         "metadata_sha256": metadata_sha,
         "upload_performed": False,
+        "public_profile": profile["profile_id"],
     }
     write_immutable_json(package_dir / "package.json", package_manifest)
     package_reference = {

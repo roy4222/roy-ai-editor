@@ -12,6 +12,11 @@ Legacy media folders can be previewed and copied into the standard project layou
 dry run; execution copies without moving or deleting source files, verifies SHA-256
 content, and does not infer approved deliverables from legacy filenames.
 
+Concert Live uses explicit candidate/approval pairs: `prepare-lyrics` then
+`approve-lyrics`, `align-timing` then `approve-timing`, and `render-track` then
+`approve-deliverable`. Render QA includes full-width crops from burned pixels; failed
+automatic layout checks cannot become Approved Deliverables.
+
 Run `python scripts/check_repo_integrity.py` before publishing an integration branch;
 it enforces Git ancestry, upstream license, secret, private-path, media, and tracked-file
 size boundaries.
