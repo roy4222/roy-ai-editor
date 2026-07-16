@@ -18,10 +18,14 @@
     "partially-lyrics-approved",
     "lyrics-approved",
     "timing-review-required",
+    "partially-timing-approved",
     "timing-approved",
+    "partially-rendered",
+    "render-qa-failed",
     "rendered",
     "partially-deliverable-approved",
     "deliverable-approved",
+    "partially-publish-ready",
     "publish-ready"
   ],
   "private_configuration": {

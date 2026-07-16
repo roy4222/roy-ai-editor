@@ -84,8 +84,16 @@ def test_cli_creates_a_traceable_forced_alignment_candidate(tmp_path: Path, caps
     audio = tmp_path / "vocals.wav"
     audio.write_bytes(b"synthetic audio fixture")
 
-    def fake_transcribe(audio_path: Path, output: Path, *, model_name: str, language: str) -> None:
+    def fake_force_align(
+        audio_path: Path,
+        approved_text: str,
+        output: Path,
+        *,
+        model_name: str,
+        language: str,
+    ) -> None:
         assert audio_path.is_file()
+        assert approved_text == "テスト"
         output.write_text(json.dumps({
             "segments": [{"text": "テスト", "words": [
                 {"word": "テ", "start": 0.0, "end": 0.4},
@@ -93,7 +101,7 @@ def test_cli_creates_a_traceable_forced_alignment_candidate(tmp_path: Path, caps
             ]}],
         }, ensure_ascii=False), encoding="utf-8")
 
-    monkeypatch.setattr("roy_ai_editor.timing.alignment.transcribe", fake_transcribe)
+    monkeypatch.setattr("roy_ai_editor.timing.alignment.force_align", fake_force_align)
     assert main([
         "concert", "align-timing", str(project_dir), "001-synthetic-song", str(audio),
         "--model", "synthetic-model", "--language", "ja",
@@ -132,21 +140,73 @@ def test_cli_creates_a_traceable_forced_alignment_candidate(tmp_path: Path, caps
 
 def test_failed_forced_alignment_does_not_create_a_candidate(tmp_path: Path, monkeypatch) -> None:
     project_dir, manifest = create_project("https://youtu.be/x3nrUagsaV4", tmp_path)
+    from roy_ai_editor.project import save_project, write_immutable_json
+    lyrics_path = project_dir / "lyrics" / "approved" / "001-synthetic-song.json"
+    lyrics_sha = write_immutable_json(lyrics_path, {
+        "lines": [{"id": "L001", "japanese": "テスト", "translation": "測試"}],
+    })
     manifest["tracks"] = [{
         "track_id": "001-synthetic-song",
         "number": 1,
-        "lyrics": {"status": "approved"},
+        "lyrics": {
+            "status": "approved",
+            "artifact": "lyrics/approved/001-synthetic-song.json",
+            "sha256": lyrics_sha,
+        },
     }]
-    from roy_ai_editor.project import save_project
     save_project(project_dir, manifest)
     audio = tmp_path / "vocals.wav"
     audio.write_bytes(b"synthetic audio fixture")
 
-    def fail_transcribe(*args, **kwargs) -> None:
+    def fail_alignment(*args, **kwargs) -> None:
         raise RuntimeError("alignment failed")
 
-    monkeypatch.setattr("roy_ai_editor.timing.alignment.transcribe", fail_transcribe)
+    monkeypatch.setattr("roy_ai_editor.timing.alignment.force_align", fail_alignment)
     with pytest.raises(RuntimeError, match="alignment failed"):
         main(["concert", "align-timing", str(project_dir), "001-synthetic-song", str(audio)])
     assert "timing_candidate" not in load_project(project_dir)["tracks"][0]
     assert not any((project_dir / "videos" / "clips").iterdir())
+
+
+def test_one_timed_track_does_not_mark_a_multi_track_project_timing_complete(tmp_path: Path) -> None:
+    from roy_ai_editor.project import save_project, write_immutable_json
+
+    project_dir, manifest = create_project("https://youtu.be/x3nrUagsaV4", tmp_path)
+    lyrics = {
+        "packet_version": 1,
+        "track_number": 1,
+        "slug": "first",
+        "title": "First",
+        "source": {
+            "url": "https://example.com/lyrics",
+            "reuse_status": "approved-for-test",
+            "captured_at": "2026-07-16T00:00:00+00:00",
+            "rights_warnings": [],
+        },
+        "lines": [{"id": "L001", "japanese": "歌", "translation": "歌"}],
+    }
+    lyrics_path = project_dir / "lyrics" / "approved" / "001-first.json"
+    lyrics_sha = write_immutable_json(lyrics_path, lyrics)
+    manifest["tracks"] = [
+        {
+            "track_id": "001-first",
+            "number": 1,
+            "lyrics": {
+                "status": "approved",
+                "artifact": "lyrics/approved/001-first.json",
+                "sha256": lyrics_sha,
+            },
+        },
+        {"track_id": "002-second", "number": 2, "lyrics": {"status": "approved"}},
+    ]
+    save_project(project_dir, manifest)
+    alignment = tmp_path / "alignment.json"
+    alignment.write_text(json.dumps({
+        "model": "synthetic",
+        "segments": [{"text": "歌", "words": [{"word": "歌", "start": 0.1, "end": 0.8}]}],
+    }, ensure_ascii=False), encoding="utf-8")
+
+    from roy_ai_editor.timing import approve_timing
+    approve_timing(project_dir, "001-first", alignment, approved_by="Roy", note="Reviewed")
+    current = load_project(project_dir)
+    assert current["stage"] == "partially-timing-approved"

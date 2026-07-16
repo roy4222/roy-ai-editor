@@ -28,6 +28,10 @@ def test_cli_builds_publish_package_without_uploading(tmp_path: Path, capsys) ->
         "video": {"path": str(video.relative_to(project_dir)), "sha256": hash_file(video)},
         "subtitle": {"path": str(subtitle.relative_to(project_dir)), "sha256": hash_file(subtitle)},
     }]
+    manifest["tracks"] = [
+        {"track_id": track_id, "number": 1},
+        {"track_id": "002-second-song", "number": 2},
+    ]
     save_project(project_dir, manifest)
     metadata = tmp_path / "metadata.json"
     metadata.write_text(json.dumps({
@@ -56,6 +60,7 @@ def test_cli_builds_publish_package_without_uploading(tmp_path: Path, capsys) ->
     assert package_metadata["rights"]["evidence"]
     assert package_metadata["public_profile"] == "roy-public-example"
     assert load_project(project_dir)["publish_packages"] == [package]
+    assert load_project(project_dir)["stage"] == "partially-publish-ready"
     assert not (package_dir / "upload.json").exists()
 
 

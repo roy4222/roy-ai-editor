@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from roy_ai_editor.cli import main
-from roy_ai_editor.deliverables import approve_deliverable, check_subtitle_layout, hash_file
+from roy_ai_editor.deliverables import approve_deliverable, check_subtitle_layout, hash_file, render_track
 from roy_ai_editor.project import create_project, load_project, save_project, write_immutable_json
 
 
@@ -121,6 +121,35 @@ def test_one_approved_track_does_not_approve_a_multi_track_project(tmp_path: Pat
     current = load_project(project_dir)
     assert current["review_gates"]["edit"] == "pending"
     assert current["stage"] == "partially-deliverable-approved"
+
+
+def test_one_rendered_track_does_not_mark_a_multi_track_project_rendered(tmp_path: Path) -> None:
+    project_dir, manifest = create_project("https://youtu.be/x3nrUagsaV4", tmp_path)
+    timing = json.loads(TIMING_FIXTURE.read_text(encoding="utf-8"))
+    timing_path = project_dir / "timing" / "approved" / "001-first.json"
+    timing_sha = write_immutable_json(timing_path, timing)
+    manifest["tracks"] = [
+        {
+            "track_id": "001-first",
+            "number": 1,
+            "timing": {
+                "status": "approved",
+                "artifact": "timing/approved/001-first.json",
+                "sha256": timing_sha,
+            },
+        },
+        {"track_id": "002-second", "number": 2, "timing": {"status": "approved"}},
+    ]
+    save_project(project_dir, manifest)
+    source = tmp_path / "source.mp4"
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "color=c=black:s=320x240:d=4",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(source),
+    ], check=True)
+
+    render_track(project_dir, "001-first", source, font="Noto Sans CJK JP")
+    assert load_project(project_dir)["stage"] == "partially-rendered"
 
 
 def test_qa_failed_candidate_cannot_be_approved(tmp_path: Path) -> None:

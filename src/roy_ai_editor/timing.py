@@ -26,6 +26,10 @@ def create_timing_candidate(
     track = next((item for item in manifest.get("tracks", []) if item.get("track_id") == track_id), None)
     if not track or track.get("lyrics", {}).get("status") != "approved":
         raise PermissionError("forced alignment requires an approved lyrics track")
+    approved_lyrics = json.loads(
+        (project_dir / track["lyrics"]["artifact"]).read_text(encoding="utf-8")
+    )
+    approved_text = "\n".join(line["japanese"] for line in approved_lyrics["lines"])
     audio_path = audio_path.expanduser().resolve()
     if not audio_path.is_file():
         raise FileNotFoundError(audio_path)
@@ -53,8 +57,9 @@ def create_timing_candidate(
     ) as handle:
         temporary = Path(handle.name)
     try:
-        alignment.transcribe(
+        alignment.force_align(
             project_audio,
+            approved_text,
             temporary,
             model_name=model_name,
             language=language,
@@ -84,6 +89,7 @@ def create_timing_candidate(
         "model": model_name,
         "language": language,
         "audio": {"path": audio_relative.as_posix(), "sha256": audio_sha},
+        "approved_lyrics": track["lyrics"],
         "artifact": alignment_relative.as_posix(),
         "sha256": alignment_sha,
     }, directory="qa")
@@ -92,6 +98,7 @@ def create_timing_candidate(
         "artifact": alignment_relative.as_posix(),
         "sha256": alignment_sha,
         "audio": {"path": audio_relative.as_posix(), "sha256": audio_sha},
+        "approved_lyrics": track["lyrics"],
         "tool": "stable-ts",
         "model": model_name,
         "language": language,
@@ -273,7 +280,10 @@ def approve_timing(
     if candidate_matches:
         track["timing_candidate"]["status"] = "approved"
     manifest.setdefault("evidence_artifacts", []).append(evidence)
-    manifest["stage"] = "timing-approved"
-    manifest["status"] = "timing-approved"
+    all_tracks_timed = bool(manifest.get("tracks")) and all(
+        item.get("timing", {}).get("status") == "approved" for item in manifest["tracks"]
+    )
+    manifest["stage"] = "timing-approved" if all_tracks_timed else "partially-timing-approved"
+    manifest["status"] = manifest["stage"]
     save_project(project_dir, manifest)
     return timing_reference

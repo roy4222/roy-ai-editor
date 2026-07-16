@@ -144,6 +144,7 @@ def approve_lyrics(
         None,
     )
     track = {
+        **(existing_track or {}),
         "track_id": track_id,
         "number": track_number,
         "slug": slug,

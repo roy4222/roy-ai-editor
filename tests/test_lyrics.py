@@ -68,7 +68,22 @@ def test_cli_approves_a_traceable_lyrics_track(tmp_path: Path, capsys) -> None:
         "concert", "approve-lyrics", str(project_dir), str(packet),
         "--approved-by", "Roy", "--note", "Synthetic fixture approved",
     ]) == 0
-    assert len(load_project(project_dir)["tracks"]) == 1
+    before_repeat = load_project(project_dir)
+    before_repeat["tracks"][0]["timing"] = {"status": "approved", "artifact": "timing/approved/existing.json"}
+    before_repeat["tracks"][0]["render_candidate"] = {"status": "review-required"}
+    before_repeat["tracks"][0]["approved_deliverable_id"] = "existing-deliverable"
+    from roy_ai_editor.project import save_project
+    save_project(project_dir, before_repeat)
+
+    assert main([
+        "concert", "approve-lyrics", str(project_dir), str(packet),
+        "--approved-by", "Roy", "--note", "Repeated approval of identical content",
+    ]) == 0
+    repeated = load_project(project_dir)
+    assert len(repeated["tracks"]) == 1
+    assert repeated["tracks"][0]["timing"]["status"] == "approved"
+    assert repeated["tracks"][0]["render_candidate"]["status"] == "review-required"
+    assert repeated["tracks"][0]["approved_deliverable_id"] == "existing-deliverable"
 
 
 def test_cli_prepares_but_blocks_a_lyrics_packet_with_unknown_rights(tmp_path: Path, capsys) -> None:

@@ -208,8 +208,15 @@ def render_track(project_dir: Path, track_id: str, source_video: Path, *, font: 
     }
     track["render_candidate"] = candidate
     manifest.setdefault("evidence_artifacts", []).append(evidence)
-    manifest["stage"] = "rendered"
-    manifest["status"] = "rendered"
+    all_tracks_rendered = bool(manifest.get("tracks")) and all(
+        item.get("render_candidate", {}).get("qa_status") == "passed"
+        for item in manifest["tracks"]
+    )
+    if visual_qa["status"] != "passed":
+        manifest["stage"] = "render-qa-failed"
+    else:
+        manifest["stage"] = "rendered" if all_tracks_rendered else "partially-rendered"
+    manifest["status"] = manifest["stage"]
     save_project(project_dir, manifest)
     return candidate
 

@@ -106,7 +106,14 @@ def package_deliverable(
         item for item in manifest.get("publish_packages", []) if item.get("track_id") != track_id
     ] + [package_reference]
     manifest["review_gates"]["publish"] = "pending"
-    manifest["stage"] = "publish-ready"
-    manifest["status"] = "publish-ready"
+    required_track_ids = {
+        item["track_id"] for item in manifest.get("tracks", [])
+    } or {
+        item["track_id"] for item in manifest.get("approved_deliverables", [])
+    }
+    packaged_track_ids = {item["track_id"] for item in manifest["publish_packages"]}
+    all_tracks_packaged = bool(required_track_ids) and required_track_ids <= packaged_track_ids
+    manifest["stage"] = "publish-ready" if all_tracks_packaged else "partially-publish-ready"
+    manifest["status"] = manifest["stage"]
     save_project(project_dir, manifest)
     return package_reference
