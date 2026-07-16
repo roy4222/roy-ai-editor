@@ -13,6 +13,7 @@ from . import media
 from .alignment import transcribe
 from .customization import concert_live_status
 from .karaoke import render_file
+from .lyrics import approve_lyrics
 from .project import DEFAULT_WORKSPACE, approve_rights, create_project, load_project, require_rights_approval
 
 UPSTREAM_FOUNDATION_COMMIT = "fd45f0e876219d98fbcba11a38a8513b88309bdf"
@@ -56,6 +57,11 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument("--evidence-url", required=True)
     approve.add_argument("--note", required=True)
     approve.add_argument("--approved-by", default="Roy")
+    lyrics = concert_commands.add_parser("approve-lyrics", help="Approve a versioned lyrics packet as a track.")
+    lyrics.add_argument("project", type=Path)
+    lyrics.add_argument("packet", type=Path)
+    lyrics.add_argument("--approved-by", default="Roy")
+    lyrics.add_argument("--note", required=True)
 
     workflow = commands.add_parser("workflow", help="Inspect or run a versioned Editing Workflow.")
     workflow_commands = workflow.add_subparsers(dest="workflow_command")
@@ -145,6 +151,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             approved_by=args.approved_by,
         )
         print(json.dumps(manifest["rights"], ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "concert" and args.concert_command == "approve-lyrics":
+        track = approve_lyrics(
+            args.project,
+            args.packet,
+            approved_by=args.approved_by,
+            note=args.note,
+        )
+        print(json.dumps(track, ensure_ascii=False, indent=2))
         return 0
     if args.command == "workflow" and args.workflow_command == "concert-live":
         print(json.dumps(concert_live_status(args.project), ensure_ascii=False, indent=2))

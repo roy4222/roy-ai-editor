@@ -50,7 +50,21 @@ uv run roy-editor download PROJECT_DIR
 uv run roy-editor cut source.mp4 song.mp4 --start 2174.0 --end 2426.0
 ```
 
-### 4. Prepare timing JSON
+### 4. Approve a versioned lyrics packet
+
+Prepare a JSON packet containing a stable track number/slug, trusted source URL,
+translator/reuse notes, and `L001`-style paired lyric lines. After the rights gate:
+
+```bash
+uv run roy-editor concert approve-lyrics PROJECT_DIR lyrics-packet.json \
+  --approved-by Roy --note "Approved this exact source, translation, and line map"
+```
+
+This writes a content-verified artifact under `lyrics/approved/`, records immutable
+approval evidence, and updates the Project Manifest. A changed packet requires a new
+approval; the command never silently overwrites an approved track artifact.
+
+### 5. Prepare timing JSON
 
 Copy [examples/karaoke-timing.example.json](examples/karaoke-timing.example.json). Each line accepts exact token timing and explicit ruby spans. If tokens or ruby are omitted, the renderer produces a usable draft by distributing time and generating kanji readings; human review is still required for singing.
 
@@ -63,7 +77,7 @@ uv run roy-editor align vocals.wav aligned.json --model large-v3 --language ja
 
 Stable-ts timestamps are evidence, not authoritative lyrics. Map them to a trusted lyric source and review mora timing before release.
 
-### 5. Render and burn karaoke
+### 6. Render and burn karaoke
 
 ```bash
 uv run roy-editor karaoke render timing.json lyrics.ass --font "Noto Sans CJK JP"

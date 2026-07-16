@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import os
 import re
 import tempfile
@@ -58,22 +58,33 @@ def _write_json_atomic(path: Path, payload: object) -> None:
             temp_path.unlink()
 
 
-def _write_evidence(project_dir: Path, kind: str, payload: object) -> dict:
+def write_immutable_json(path: Path, payload: object) -> str:
     data = _json_bytes(payload)
     digest = hashlib.sha256(data).hexdigest()
-    relative_path = Path("approvals") / f"{kind}-{digest[:16]}.json"
-    evidence_path = project_dir / relative_path
-    if evidence_path.exists():
-        if evidence_path.read_bytes() != data:
-            raise RuntimeError(f"Evidence artifact collision: {evidence_path}")
+    if path.exists():
+        if path.read_bytes() != data:
+            raise RuntimeError(f"Immutable artifact already exists with different content: {path}")
     else:
-        _write_json_atomic(evidence_path, payload)
+        _write_json_atomic(path, payload)
+    return digest
+
+
+def record_evidence(project_dir: Path, kind: str, payload: object, *, directory: str = "approvals") -> dict:
+    data = _json_bytes(payload)
+    digest = hashlib.sha256(data).hexdigest()
+    relative_path = Path(directory) / f"{kind}-{digest[:16]}.json"
+    evidence_path = project_dir / relative_path
+    write_immutable_json(evidence_path, payload)
     return {
         "id": f"evidence-{digest[:16]}",
         "kind": kind,
         "path": relative_path.as_posix(),
         "sha256": digest,
     }
+
+
+def save_project(project_dir: Path, manifest: dict) -> None:
+    _write_json_atomic(project_dir.expanduser().resolve() / "project.json", manifest)
 
 
 def source_id(url: str) -> str:
@@ -153,7 +164,7 @@ def approve_rights(
         "evidence_url": evidence_url.strip(),
         "note": note.strip(),
     }
-    reference = _write_evidence(project_dir, "rights-approval", approval)
+    reference = record_evidence(project_dir, "rights-approval", approval)
     approvals.append(approval)
     rights.update({
         "status": "approved",
@@ -164,7 +175,7 @@ def approve_rights(
     manifest["review_gates"]["rights"] = "approved"
     manifest["stage"] = "rights-approved"
     manifest["status"] = "rights-approved"
-    _write_json_atomic(project_dir / "project.json", manifest)
+    save_project(project_dir, manifest)
     return manifest
 
 
