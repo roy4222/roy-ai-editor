@@ -461,7 +461,7 @@ def release_job_lease(
     project_dir: Path,
     worker_id: str,
     *,
-    generation: int | None = None,
+    generation: int,
 ) -> None:
     project_dir = project_dir.expanduser().resolve()
     with _production_job_lock(project_dir):
@@ -472,13 +472,11 @@ def _release_job_lease_unlocked(
     project_dir: Path,
     worker_id: str,
     *,
-    generation: int | None = None,
+    generation: int,
 ) -> None:
     manifest = load_project(project_dir)
     job = manifest["production_job"]
     lease = job.get("lease")
-    if not lease and generation is None:
-        return
     _assert_lease_owner(job, worker_id, generation)
     job["lease"] = None
     save_project(project_dir, manifest)

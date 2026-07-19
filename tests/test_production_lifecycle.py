@@ -21,6 +21,7 @@ from roy_ai_editor.production import (
     canonicalize_youtube_url,
     heartbeat_job_lease,
     list_outbox_events,
+    release_job_lease,
     run_production_job,
     submit_review_reply,
     submit_production_job,
@@ -260,6 +261,15 @@ def test_same_worker_label_restart_requires_ttl_and_gets_a_new_generation(
             generation=first["generation"],
             now=datetime(2026, 7, 19, 8, 2, 1, tzinfo=UTC),
         )
+    with pytest.raises(LeaseUnavailable):
+        release_job_lease(
+            submitted.project_dir,
+            "launchd-worker",
+            generation=first["generation"],
+        )
+    with pytest.raises(TypeError):
+        release_job_lease(submitted.project_dir, "launchd-worker")
+    assert load_project(submitted.project_dir)["production_job"]["lease"] == restarted
 
 
 def test_resumed_stale_worker_is_fenced_after_lease_takeover(tmp_path: Path) -> None:
