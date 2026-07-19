@@ -427,25 +427,31 @@ def heartbeat_job_lease(
     project_dir: Path,
     worker_id: str,
     *,
+    generation: int | None = None,
     now: datetime | None = None,
 ) -> dict:
     project_dir = project_dir.expanduser().resolve()
     with _production_job_lock(project_dir):
-        return _heartbeat_job_lease_unlocked(project_dir, worker_id, now=now)
+        return _heartbeat_job_lease_unlocked(
+            project_dir,
+            worker_id,
+            generation=generation,
+            now=now,
+        )
 
 
 def _heartbeat_job_lease_unlocked(
     project_dir: Path,
     worker_id: str,
     *,
+    generation: int | None = None,
     now: datetime | None = None,
 ) -> dict:
     current_time = _utc_now(now)
     manifest = load_project(project_dir)
     job = manifest["production_job"]
     lease = job.get("lease")
-    if not lease or lease.get("worker_id") != worker_id:
-        raise LeaseUnavailable("Production Job lease is not owned by this worker")
+    _assert_lease_owner(job, worker_id, generation)
     if current_time < datetime.fromisoformat(lease["heartbeat_at"]):
         raise ValueError("heartbeat time cannot move backwards")
     lease["heartbeat_at"] = current_time.isoformat()
@@ -453,22 +459,39 @@ def _heartbeat_job_lease_unlocked(
     return lease
 
 
-def release_job_lease(project_dir: Path, worker_id: str) -> None:
+def release_job_lease(
+    project_dir: Path,
+    worker_id: str,
+    *,
+    generation: int | None = None,
+) -> None:
     project_dir = project_dir.expanduser().resolve()
     with _production_job_lock(project_dir):
-        _release_job_lease_unlocked(project_dir, worker_id)
+        _release_job_lease_unlocked(project_dir, worker_id, generation=generation)
 
 
-def _release_job_lease_unlocked(project_dir: Path, worker_id: str) -> None:
+def _release_job_lease_unlocked(
+    project_dir: Path,
+    worker_id: str,
+    *,
+    generation: int | None = None,
+) -> None:
     manifest = load_project(project_dir)
     job = manifest["production_job"]
     lease = job.get("lease")
-    if not lease:
+    if not lease and generation is None:
         return
-    if lease.get("worker_id") != worker_id:
-        raise LeaseUnavailable("Production Job lease is not owned by this worker")
+    _assert_lease_owner(job, worker_id, generation)
     job["lease"] = None
     save_project(project_dir, manifest)
+
+
+def _assert_lease_owner(job: dict, worker_id: str, generation: int | None) -> None:
+    lease = job.get("lease")
+    if not lease or lease.get("worker_id") != worker_id:
+        raise LeaseUnavailable("Production Job worker has been fenced by lease takeover")
+    if generation is not None and lease.get("generation") != generation:
+        raise LeaseUnavailable("Production Job worker has been fenced by lease generation")
 
 
 def _request_payload(project_dir: Path, job: dict) -> dict:
@@ -483,62 +506,74 @@ def _effect_result(project_dir: Path, reference: dict) -> dict:
 def _run_adapter_effect(
     project_dir: Path,
     *,
+    worker_id: str,
+    lease_generation: int,
     kind: str,
     idempotency_key: str,
     now: datetime,
     invoke: Callable[[], dict],
 ) -> tuple[dict, dict]:
-    manifest = load_project(project_dir)
-    job = manifest["production_job"]
-    entry = next(
-        (item for item in job["side_effect_ledger"] if item["idempotency_key"] == idempotency_key),
-        None,
-    )
-    if entry and entry["status"] == "completed":
-        reference = entry["result_evidence"]
-        return _effect_result(project_dir, reference), reference
-    if entry is None:
-        entry = {
-            "effect_id": f"effect-{hashlib.sha256(idempotency_key.encode()).hexdigest()[:16]}",
-            "kind": kind,
-            "idempotency_key": idempotency_key,
-            "status": "planned",
-            "planned_at": now.isoformat(),
-            "attempts": 0,
-        }
-        job["side_effect_ledger"].append(entry)
+    with _production_job_lock(project_dir):
+        manifest = load_project(project_dir)
+        job = manifest["production_job"]
+        _assert_lease_owner(job, worker_id, lease_generation)
+        entry = next(
+            (
+                item
+                for item in job["side_effect_ledger"]
+                if item["idempotency_key"] == idempotency_key
+            ),
+            None,
+        )
+        if entry and entry["status"] == "completed":
+            reference = entry["result_evidence"]
+            return _effect_result(project_dir, reference), reference
+        if entry is None:
+            entry = {
+                "effect_id": f"effect-{hashlib.sha256(idempotency_key.encode()).hexdigest()[:16]}",
+                "kind": kind,
+                "idempotency_key": idempotency_key,
+                "status": "planned",
+                "planned_at": now.isoformat(),
+                "attempts": 0,
+            }
+            job["side_effect_ledger"].append(entry)
+        entry["attempts"] += 1
         save_project(project_dir, manifest)
-
-    entry["attempts"] += 1
-    save_project(project_dir, manifest)
     try:
         result = invoke()
     except Exception as exc:
-        manifest = load_project(project_dir)
-        job = manifest["production_job"]
-        job["retry_evidence"].append({
-            "kind": kind,
-            "idempotency_key": idempotency_key,
-            "attempted_at": now.isoformat(),
-            "error_type": type(exc).__name__,
-        })
-        save_project(project_dir, manifest)
+        with _production_job_lock(project_dir):
+            manifest = load_project(project_dir)
+            job = manifest["production_job"]
+            _assert_lease_owner(job, worker_id, lease_generation)
+            job["retry_evidence"].append({
+                "kind": kind,
+                "idempotency_key": idempotency_key,
+                "attempted_at": now.isoformat(),
+                "error_type": type(exc).__name__,
+            })
+            save_project(project_dir, manifest)
         raise
 
-    reference = record_evidence(project_dir, f"{kind}-result", result, directory="work")
-    manifest = load_project(project_dir)
-    job = manifest["production_job"]
-    entry = next(
-        item for item in job["side_effect_ledger"] if item["idempotency_key"] == idempotency_key
-    )
-    entry.update({
-        "status": "completed",
-        "completed_at": now.isoformat(),
-        "result_evidence": reference,
-    })
-    if not any(item["id"] == reference["id"] for item in manifest["evidence_artifacts"]):
-        manifest["evidence_artifacts"].append(reference)
-    save_project(project_dir, manifest)
+    with _production_job_lock(project_dir):
+        manifest = load_project(project_dir)
+        job = manifest["production_job"]
+        _assert_lease_owner(job, worker_id, lease_generation)
+        reference = record_evidence(project_dir, f"{kind}-result", result, directory="work")
+        entry = next(
+            item
+            for item in job["side_effect_ledger"]
+            if item["idempotency_key"] == idempotency_key
+        )
+        entry.update({
+            "status": "completed",
+            "completed_at": now.isoformat(),
+            "result_evidence": reference,
+        })
+        if not any(item["id"] == reference["id"] for item in manifest["evidence_artifacts"]):
+            manifest["evidence_artifacts"].append(reference)
+        save_project(project_dir, manifest)
     return result, reference
 
 
@@ -751,7 +786,8 @@ def run_production_job(
 ) -> dict:
     project_dir = project_dir.expanduser().resolve()
     current_time = _utc_now(now)
-    acquire_job_lease(project_dir, worker_id, now=current_time)
+    lease = acquire_job_lease(project_dir, worker_id, now=current_time)
+    lease_generation = int(lease["generation"])
     succeeded = False
     try:
         manifest = load_project(project_dir)
@@ -761,6 +797,8 @@ def run_production_job(
             idempotency_key = f"{job['job_id']}:prepare-lyrics-review:v1"
             result, reference = _run_adapter_effect(
                 project_dir,
+                worker_id=worker_id,
+                lease_generation=lease_generation,
                 kind="prepare-lyrics-review",
                 idempotency_key=idempotency_key,
                 now=current_time,
@@ -777,36 +815,40 @@ def run_production_job(
                 "artifact": reference,
                 "originating_task": job["originating_task"],
             }
-            manifest = load_project(project_dir)
-            job = manifest["production_job"]
-            outbox_event = _append_outbox_event(project_dir, manifest, {
-                "dedupe_key": f"{job['job_id']}:lyrics-review:{review_id}",
-                "kind": "concert-lyrics-review-ready",
-                "job_id": job["job_id"],
-                "originating_task": job["originating_task"],
-                "review_id": review_id,
-                "displayed_hashes": list(result["displayed_hashes"]),
-                "artifact_sha256": reference["sha256"],
-                "created_at": current_time.isoformat(),
-            })
-            pending_review["outbox_cursor"] = outbox_event["outbox_cursor"]
-            job["pending_review"] = pending_review
-            job["state"] = "awaiting-lyrics-review"
-            job["checkpoints"].append({
-                "kind": "lyrics-review-prepared",
-                "at": current_time.isoformat(),
-                "review_id": review_id,
-                "artifact_sha256": reference["sha256"],
-            })
-            manifest["stage"] = "lyrics-review-required"
-            manifest["status"] = manifest["stage"]
-            save_project(project_dir, manifest)
+            with _production_job_lock(project_dir):
+                manifest = load_project(project_dir)
+                job = manifest["production_job"]
+                _assert_lease_owner(job, worker_id, lease_generation)
+                outbox_event = _append_outbox_event(project_dir, manifest, {
+                    "dedupe_key": f"{job['job_id']}:lyrics-review:{review_id}",
+                    "kind": "concert-lyrics-review-ready",
+                    "job_id": job["job_id"],
+                    "originating_task": job["originating_task"],
+                    "review_id": review_id,
+                    "displayed_hashes": list(result["displayed_hashes"]),
+                    "artifact_sha256": reference["sha256"],
+                    "created_at": current_time.isoformat(),
+                })
+                pending_review["outbox_cursor"] = outbox_event["outbox_cursor"]
+                job["pending_review"] = pending_review
+                job["state"] = "awaiting-lyrics-review"
+                job["checkpoints"].append({
+                    "kind": "lyrics-review-prepared",
+                    "at": current_time.isoformat(),
+                    "review_id": review_id,
+                    "artifact_sha256": reference["sha256"],
+                })
+                manifest["stage"] = "lyrics-review-required"
+                manifest["status"] = manifest["stage"]
+                save_project(project_dir, manifest)
         elif job["state"] == "lyrics-approved":
             request = _request_payload(project_dir, job)
             approved_hashes = list(job["approved_review"]["displayed_hashes"])
             idempotency_key = f"{job['job_id']}:create-verified-delivery:v1"
             result, reference = _run_adapter_effect(
                 project_dir,
+                worker_id=worker_id,
+                lease_generation=lease_generation,
                 kind="create-verified-delivery",
                 idempotency_key=idempotency_key,
                 now=current_time,
@@ -816,42 +858,48 @@ def run_production_job(
                     idempotency_key=idempotency_key,
                 ),
             )
-            manifest = load_project(project_dir)
-            job = manifest["production_job"]
-            if not any(item["id"] == reference["id"] for item in job["verified_results"]):
-                job["verified_results"].append(reference)
-            job["delivery_review"] = {
-                "kind": "delivery-review",
-                "artifact": reference,
-                "approved_hashes": approved_hashes,
-                "private_url": result["private_url"],
-                "remote_video_id": result["remote_video_id"],
-                "visibility": result["visibility"],
-            }
-            job["state"] = "delivery-review-ready"
-            job["checkpoints"].append({
-                "kind": "delivery-review-prepared",
-                "at": current_time.isoformat(),
-                "artifact_sha256": reference["sha256"],
-                "remote_video_id": result["remote_video_id"],
-            })
-            manifest["stage"] = "delivery-review-ready"
-            manifest["status"] = manifest["stage"]
-            _append_outbox_event(project_dir, manifest, {
-                "dedupe_key": f"{job['job_id']}:delivery-review:{reference['sha256']}",
-                "kind": "delivery-review-ready",
-                "job_id": job["job_id"],
-                "originating_task": job["originating_task"],
-                "approved_hashes": approved_hashes,
-                "private_url": result["private_url"],
-                "remote_video_id": result["remote_video_id"],
-                "visibility": result["visibility"],
-                "artifact_sha256": reference["sha256"],
-                "created_at": current_time.isoformat(),
-            })
-            save_project(project_dir, manifest)
+            with _production_job_lock(project_dir):
+                manifest = load_project(project_dir)
+                job = manifest["production_job"]
+                _assert_lease_owner(job, worker_id, lease_generation)
+                if not any(item["id"] == reference["id"] for item in job["verified_results"]):
+                    job["verified_results"].append(reference)
+                job["delivery_review"] = {
+                    "kind": "delivery-review",
+                    "artifact": reference,
+                    "approved_hashes": approved_hashes,
+                    "private_url": result["private_url"],
+                    "remote_video_id": result["remote_video_id"],
+                    "visibility": result["visibility"],
+                }
+                job["state"] = "delivery-review-ready"
+                job["checkpoints"].append({
+                    "kind": "delivery-review-prepared",
+                    "at": current_time.isoformat(),
+                    "artifact_sha256": reference["sha256"],
+                    "remote_video_id": result["remote_video_id"],
+                })
+                manifest["stage"] = "delivery-review-ready"
+                manifest["status"] = manifest["stage"]
+                _append_outbox_event(project_dir, manifest, {
+                    "dedupe_key": f"{job['job_id']}:delivery-review:{reference['sha256']}",
+                    "kind": "delivery-review-ready",
+                    "job_id": job["job_id"],
+                    "originating_task": job["originating_task"],
+                    "approved_hashes": approved_hashes,
+                    "private_url": result["private_url"],
+                    "remote_video_id": result["remote_video_id"],
+                    "visibility": result["visibility"],
+                    "artifact_sha256": reference["sha256"],
+                    "created_at": current_time.isoformat(),
+                })
+                save_project(project_dir, manifest)
         succeeded = True
     finally:
         if succeeded:
-            release_job_lease(project_dir, worker_id)
+            release_job_lease(
+                project_dir,
+                worker_id,
+                generation=lease_generation,
+            )
     return load_project(project_dir)

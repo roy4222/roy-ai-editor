@@ -5,7 +5,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event
 
 import pytest
 
@@ -221,6 +221,55 @@ def test_concurrent_workers_cannot_both_acquire_the_job_lease(tmp_path: Path) ->
         "worker-a",
         "worker-b",
     }
+
+
+def test_resumed_stale_worker_is_fenced_after_lease_takeover(tmp_path: Path) -> None:
+    started = Event()
+    resume = Event()
+    fake_service = tmp_path / "external-fake-service"
+
+    class PausingAdapter(SyntheticProductionAdapter):
+        def prepare_lyrics_review(self, request: dict, *, idempotency_key: str) -> dict:
+            result = super().prepare_lyrics_review(request, idempotency_key=idempotency_key)
+            started.set()
+            if not resume.wait(timeout=5):
+                raise TimeoutError("test did not resume the paused worker")
+            return result
+
+    submitted = submit_production_job(
+        ProductionJobIntent(
+            source_url="https://youtu.be/x3nrUagsaV4",
+            originating_task="codex-task-123",
+        ),
+        workspace=tmp_path,
+        submitted_at=datetime(2026, 7, 19, 8, 0, tzinfo=UTC),
+    )
+    stale_adapter = PausingAdapter(state_dir=fake_service)
+    takeover_adapter = SyntheticProductionAdapter(state_dir=fake_service)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        stale_run = executor.submit(
+            run_production_job,
+            submitted.project_dir,
+            stale_adapter,
+            worker_id="worker-a",
+            now=datetime(2026, 7, 19, 8, 5, tzinfo=UTC),
+        )
+        assert started.wait(timeout=5)
+        taken_over = run_production_job(
+            submitted.project_dir,
+            takeover_adapter,
+            worker_id="worker-b",
+            now=datetime(2026, 7, 19, 8, 6, tzinfo=UTC),
+        )
+        resume.set()
+        with pytest.raises(LeaseUnavailable):
+            stale_run.result(timeout=5)
+
+    assert taken_over["production_job"]["state"] == "awaiting-lyrics-review"
+    assert stale_adapter.effect_counts == {"prepare-lyrics-review": 1}
+    assert takeover_adapter.effect_counts == {}
+    assert len(list_outbox_events(submitted.project_dir)) == 1
 
 
 def test_worker_stops_at_one_hash_bound_lyrics_review_without_duplicate_effects(
