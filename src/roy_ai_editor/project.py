@@ -23,6 +23,10 @@ def _platform_default_workspace() -> Path:
 DEFAULT_WORKSPACE = Path(os.environ.get("ROY_EDITOR_WORKSPACE", _platform_default_workspace()))
 
 STANDARD_PROJECT_DIRECTORIES = (
+    "requests",
+    "replies",
+    "outbox/events",
+    "outbox/receipts",
     "videos/source",
     "videos/clips",
     "videos/review",
@@ -103,9 +107,14 @@ def source_id(url: str) -> str:
     return fallback.strip("-").lower()[:64] or "concert"
 
 
-def create_project(url: str, workspace: Path | None = None) -> tuple[Path, dict]:
+def create_project(
+    url: str,
+    workspace: Path | None = None,
+    *,
+    project_id: str | None = None,
+) -> tuple[Path, dict]:
     root = (workspace or DEFAULT_WORKSPACE).expanduser().resolve()
-    project_dir = root / source_id(url)
+    project_dir = root / (project_id or source_id(url))
     for child in STANDARD_PROJECT_DIRECTORIES:
         (project_dir / child).mkdir(parents=True, exist_ok=True)
 

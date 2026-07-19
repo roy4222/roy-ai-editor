@@ -7,6 +7,7 @@ import importlib.util
 import json
 import shutil
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 
 from . import media
@@ -18,6 +19,16 @@ from .lyrics import approve_lyrics, prepare_lyrics_packet
 from .migration import migrate_legacy
 from .migration_verification import verify_migrated_projects
 from .project import DEFAULT_WORKSPACE, approve_rights, create_project, load_project, require_rights_approval
+from .production import (
+    ProductionJobIntent,
+    ReviewReplyIntent,
+    SyntheticProductionAdapter,
+    acknowledge_outbox_event,
+    list_outbox_events,
+    run_production_job,
+    submit_production_job,
+    submit_review_reply,
+)
 from .publish import package_deliverable
 from .timing import approve_timing, create_timing_candidate
 
@@ -57,6 +68,42 @@ def build_parser() -> argparse.ArgumentParser:
     create = concert_commands.add_parser("create", help="Create a project manifest from a concert URL.")
     create.add_argument("url")
     create.add_argument("--workspace", type=Path, default=DEFAULT_WORKSPACE)
+    submit_job = concert_commands.add_parser(
+        "submit-job",
+        help="Persist a durable Concert Production Job Request.",
+    )
+    submit_job.add_argument("url")
+    submit_job.add_argument("--workspace", type=Path, default=DEFAULT_WORKSPACE)
+    submit_job.add_argument("--originating-task", required=True)
+    submit_job.add_argument("--profile-id", default="roy-public-example")
+    submit_job.add_argument("--track", action="append", default=[])
+    run_job = concert_commands.add_parser(
+        "run-job",
+        help="Run one durable Production Job step with the synthetic V1 tracer adapter.",
+    )
+    run_job.add_argument("project", type=Path)
+    run_job.add_argument("--worker-id", required=True)
+    review_reply = concert_commands.add_parser(
+        "review-reply",
+        help="Submit a hash-bound reply to the pending Concert Lyrics Review.",
+    )
+    review_reply.add_argument("project", type=Path)
+    review_reply.add_argument("--reply-id", required=True)
+    review_reply.add_argument("--originating-task", required=True)
+    review_reply.add_argument("--review-id", required=True)
+    review_reply.add_argument("--displayed-hash", action="append", required=True)
+    review_reply.add_argument("--outbox-cursor", type=int, required=True)
+    review_reply.add_argument("--response", required=True)
+    outbox = concert_commands.add_parser("outbox", help="List undelivered Review Outbox events.")
+    outbox.add_argument("project", type=Path)
+    outbox.add_argument("--include-acknowledged", action="store_true")
+    acknowledge = concert_commands.add_parser(
+        "ack-outbox",
+        help="Persist delivery acknowledgement for a Review Outbox event.",
+    )
+    acknowledge.add_argument("project", type=Path)
+    acknowledge.add_argument("event_id")
+    acknowledge.add_argument("--originating-task", required=True)
     approve = concert_commands.add_parser("approve-rights", help="Record Roy's explicit rights approval.")
     approve.add_argument("project", type=Path)
     approve.add_argument("--evidence-url", required=True)
@@ -190,6 +237,63 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "concert" and args.concert_command == "create":
         project_dir, manifest = create_project(args.url, args.workspace)
         print(json.dumps({"project_dir": str(project_dir), "manifest": manifest}, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "concert" and args.concert_command == "submit-job":
+        tracks = tuple(args.track)
+        submission = submit_production_job(
+            ProductionJobIntent(
+                source_url=args.url,
+                selection_mode="selected" if tracks else "all",
+                selected_tracks=tracks,
+                profile_id=args.profile_id,
+                originating_task=args.originating_task,
+            ),
+            workspace=args.workspace,
+        )
+        print(json.dumps({
+            "project_dir": str(submission.project_dir),
+            "job_id": submission.job_id,
+            "request_id": submission.request_id,
+            "manifest": submission.manifest,
+        }, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "concert" and args.concert_command == "run-job":
+        manifest = run_production_job(
+            args.project,
+            SyntheticProductionAdapter(),
+            worker_id=args.worker_id,
+        )
+        print(json.dumps(manifest, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "concert" and args.concert_command == "review-reply":
+        result = submit_review_reply(
+            args.project,
+            ReviewReplyIntent(
+                reply_id=args.reply_id,
+                originating_task=args.originating_task,
+                review_id=args.review_id,
+                displayed_hashes=tuple(args.displayed_hash),
+                outbox_cursor=args.outbox_cursor,
+                response=args.response,
+                received_at=datetime.now(UTC),
+            ),
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "concert" and args.concert_command == "outbox":
+        print(json.dumps(
+            list_outbox_events(args.project, include_acknowledged=args.include_acknowledged),
+            ensure_ascii=False,
+            indent=2,
+        ))
+        return 0
+    if args.command == "concert" and args.concert_command == "ack-outbox":
+        result = acknowledge_outbox_event(
+            args.project,
+            args.event_id,
+            originating_task=args.originating_task,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     if args.command == "concert" and args.concert_command == "approve-rights":
         manifest = approve_rights(

@@ -26,7 +26,8 @@
     "partially-deliverable-approved",
     "deliverable-approved",
     "partially-publish-ready",
-    "publish-ready"
+    "publish-ready",
+    "delivery-review-ready"
   ],
   "private_configuration": {
     "environment_prefix": "ROY_EDITOR_",
