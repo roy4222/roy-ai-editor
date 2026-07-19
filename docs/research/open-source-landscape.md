@@ -211,7 +211,7 @@ roy-ai-editor/
 3. 封裝 yt-dlp、FFmpeg/ASS、WhisperX、VideoLingo-like translation stages。
 4. 產生 review package，而不是直接公開。
 
-### V1：Concert Clips Skill
+### V1：Concert Live Workflow
 
 1. 版權 evidence collector（只給 evidence＋風險，不宣稱法律判決）。
 2. 章節／留言／音訊多訊號切歌，保留 end candidate previews。
@@ -244,7 +244,7 @@ roy-ai-editor/
 
 ## 最終判斷
 
-**Go：建立通用 `roy-ai-editor` repo，Concert Clips 是第一個 Skill。**
+**Go：建立通用 `roy-ai-editor` repo，Concert Live Workflow 是第一個 Editing Workflow。**
 
 第一版最值得借用的是 video-use 的 agent/EDL/review-loop 心智模型與 VideoLingo/WhisperX 的字幕能力；FFmpeg/ASS 保持主 renderer。Director、MoneyPrinterTurbo、Remotion、ComfyUI 則各借 agent UI、短片 generation workflow、模板渲染、生成式 graph，但都不應成為核心依賴。
 

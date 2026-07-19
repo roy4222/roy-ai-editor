@@ -1,4 +1,6 @@
-# Production data migration plan
+# Production data migration plan (historical WSL plan)
+
+> **Superseded — do not execute on the Dedicated Editor Host.** This plan records the former WSL/D-drive migration only. ADR 0008 and `docs/plans/2026-07-18-concert-v1-production-blueprint.md` are authoritative for the Mac mini and `/Volumes/RoyMedia/RoyAIEditor`; no current workflow may infer a second Production Data Root from the paths below.
 
 ## Goal
 

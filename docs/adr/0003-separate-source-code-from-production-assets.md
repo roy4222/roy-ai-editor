@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: superseded
+superseded_by: 0008-run-production-on-the-dedicated-mac-mini.md
 ---
 
 # Separate source code from production assets

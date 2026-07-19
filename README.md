@@ -32,7 +32,7 @@ uv run pytest
 
 ```bash
 uv run roy-editor concert create "YOUTUBE_URL" \
-  --workspace /mnt/d/VideoProjects/RoyAIEditor/projects
+  --workspace /Volumes/RoyMedia/RoyAIEditor/projects
 ```
 
 ### 2. Record explicit rights approval, then download
@@ -142,8 +142,8 @@ complete file map first; dry-run mode does not create the destination:
 
 ```bash
 uv run roy-editor migrate legacy \
-  /mnt/d/VideoProjects/LEGACY_PROJECT \
-  /mnt/d/VideoProjects/RoyAIEditor/projects/PROJECT_ID
+  /path/to/LEGACY_PROJECT \
+  /Volumes/RoyMedia/RoyAIEditor/projects/PROJECT_ID
 ```
 
 After reviewing the JSON plan, execute the copy-and-verify pass explicitly:
@@ -205,7 +205,7 @@ Inspect a standard Media Project through the versioned Concert Live Workflow:
 
 ```bash
 uv run roy-editor workflow concert-live \
-  /mnt/d/VideoProjects/RoyAIEditor/projects/PROJECT_ID
+  /Volumes/RoyMedia/RoyAIEditor/projects/PROJECT_ID
 ```
 
 The command reports the next explicit review gate from `project.json`. It never treats
@@ -213,7 +213,14 @@ a filename such as `final-v2.mp4` as an Approved Deliverable.
 
 ## Codex Skill
 
-The source of truth is [skills/roy-edit-concert-live](skills/roy-edit-concert-live). To install it into Windows Codex Desktop:
+The source of truth is [skills/roy-edit-concert-live](skills/roy-edit-concert-live). On the Dedicated Editor Host, link that canonical source into Codex so repo updates are immediately available:
+
+```bash
+mkdir -p "$HOME/.codex/skills"
+ln -s "$(pwd)/skills/roy-edit-concert-live" "$HOME/.codex/skills/roy-edit-concert-live"
+```
+
+For the legacy Windows Codex Desktop setup:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts/sync_skill_to_windows.ps1"
