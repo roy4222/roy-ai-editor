@@ -16,6 +16,7 @@ def candidates() -> list[Path]:
     values: list[Path] = []
     if configured := os.environ.get("ROY_AI_EDITOR_REPO"):
         values.append(Path(configured))
+    values.append(Path(__file__).resolve().parents[3])
     values.extend(
         [
             Path.cwd(),

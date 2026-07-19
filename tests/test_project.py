@@ -1,5 +1,7 @@
 import hashlib
 import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -33,7 +35,13 @@ def test_source_id_reads_youtube_urls() -> None:
 
 
 def test_default_workspace_uses_the_production_data_root() -> None:
-    assert DEFAULT_WORKSPACE == Path("/mnt/d/VideoProjects/RoyAIEditor/projects")
+    if sys.platform == "darwin":
+        expected = Path("/Volumes/RoyMedia/RoyAIEditor/projects")
+    elif os.name == "nt":
+        expected = Path("D:/VideoProjects/RoyAIEditor/projects")
+    else:
+        expected = Path("/mnt/d/VideoProjects/RoyAIEditor/projects")
+    assert DEFAULT_WORKSPACE == expected
 
 
 def test_create_project_is_idempotent(tmp_path: Path) -> None:

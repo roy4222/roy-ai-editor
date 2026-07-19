@@ -6,17 +6,21 @@ import hashlib
 import json
 import os
 import re
+import sys
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-DEFAULT_WORKSPACE = Path(
-    os.environ.get(
-        "ROY_EDITOR_WORKSPACE",
-        "/mnt/d/VideoProjects/RoyAIEditor/projects",
-    )
-)
+def _platform_default_workspace() -> Path:
+    if sys.platform == "darwin":
+        return Path("/Volumes/RoyMedia/RoyAIEditor/projects")
+    if os.name == "nt":
+        return Path("D:/VideoProjects/RoyAIEditor/projects")
+    return Path("/mnt/d/VideoProjects/RoyAIEditor/projects")
+
+
+DEFAULT_WORKSPACE = Path(os.environ.get("ROY_EDITOR_WORKSPACE", _platform_default_workspace()))
 
 STANDARD_PROJECT_DIRECTORIES = (
     "videos/source",
