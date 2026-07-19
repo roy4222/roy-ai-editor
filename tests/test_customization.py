@@ -14,7 +14,7 @@ def test_public_customization_is_safe_and_versioned() -> None:
 
     assert profile["profile_id"] == "roy-public-example"
     assert workflow["workflow_id"] == "concert-live"
-    assert workflow["required_review_gates"] == ["rights", "lyrics", "edit", "publish"]
+    assert workflow["required_review_gates"] == ["lyrics"]
 
     public_text = (profile_path.read_text(encoding="utf-8") + workflow_path.read_text(encoding="utf-8")).lower()
     for prohibited in ("api_key", "password", "cookie", "private_key", "bearer "):

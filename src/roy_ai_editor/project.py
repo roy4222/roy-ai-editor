@@ -114,7 +114,10 @@ def create_project(
     project_id: str | None = None,
 ) -> tuple[Path, dict]:
     root = (workspace or DEFAULT_WORKSPACE).expanduser().resolve()
-    project_dir = root / (project_id or source_id(url))
+    resolved_project_id = project_id or source_id(url)
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", resolved_project_id):
+        raise ValueError("project_id must be one safe filesystem path component")
+    project_dir = root / resolved_project_id
     for child in STANDARD_PROJECT_DIRECTORIES:
         (project_dir / child).mkdir(parents=True, exist_ok=True)
 

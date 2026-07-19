@@ -76,6 +76,15 @@ def test_create_project_is_idempotent(tmp_path: Path) -> None:
     }
 
 
+@pytest.mark.parametrize("project_id", ["../escape", "/absolute", ".", "bad/name"])
+def test_create_project_rejects_unsafe_explicit_project_ids(
+    tmp_path: Path,
+    project_id: str,
+) -> None:
+    with pytest.raises(ValueError):
+        create_project("https://youtu.be/x3nrUagsaV4", tmp_path, project_id=project_id)
+
+
 def test_rights_gate_requires_explicit_approval(tmp_path: Path) -> None:
     project_dir, _ = create_project("https://youtu.be/x3nrUagsaV4", tmp_path)
     with pytest.raises(PermissionError):

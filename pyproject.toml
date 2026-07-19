@@ -45,3 +45,4 @@ packages = [
 [tool.hatch.build.targets.wheel.force-include]
 "profiles" = "roy_ai_editor/resources/profiles"
 "workflows" = "roy_ai_editor/resources/workflows"
+"docs/quality/concert-v1-quality-registry.md" = "roy_ai_editor/resources/quality/concert-v1-quality-registry.md"

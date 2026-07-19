@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 
+import roy_ai_editor.production as production_module
 from roy_ai_editor.cli import main
 from roy_ai_editor.production import (
     LeaseUnavailable,
@@ -109,6 +112,18 @@ def test_submit_production_job_deduplicates_canonical_intent_and_preserves_reque
         "mode": "selected",
         "tracks": ["Song A", "Song B"],
     }
+    request = json.loads(
+        (first.project_dir / first.manifest["production_job"]["requests"][0]["path"])
+        .read_text(encoding="utf-8")
+    )
+    assert request["intake_authorization"]["scope"] == [
+        "local-processing",
+        "private-youtube-upload",
+    ]
+    assert request["toolchain_release"]["id"] == "concert-v1-tracer@1.0.0"
+    assert len(request["toolchain_release"]["sha256"]) == 64
+    assert request["quality_registry"]["id"] == "concert-v1-quality@1.0.0"
+    assert len(request["quality_registry"]["sha256"]) == 64
 
     request_references = duplicate.manifest["production_job"]["requests"]
     assert len(request_references) == 2
@@ -137,6 +152,11 @@ def test_job_lease_takeover_requires_ttl_after_the_unchanged_durable_heartbeat(
     acquired_at = datetime(2026, 7, 19, 8, 1, tzinfo=UTC)
 
     first = acquire_job_lease(submitted.project_dir, "worker-a", now=acquired_at)
+    assert submitted.manifest["production_job"]["lease_policy"] == {
+        "policy_version": 1,
+        "heartbeat_seconds": 15,
+        "ttl_seconds": 60,
+    }
     assert first["worker_id"] == "worker-a"
     assert first["heartbeat_at"] == "2026-07-19T08:01:00+00:00"
 
@@ -168,6 +188,39 @@ def test_job_lease_takeover_requires_ttl_after_the_unchanged_durable_heartbeat(
     manifest = load_project(submitted.project_dir)
     assert manifest["production_job"]["lease"] == takeover
     assert manifest["production_job"]["checkpoints"][-1]["kind"] == "lease-takeover"
+
+
+def test_concurrent_workers_cannot_both_acquire_the_job_lease(tmp_path: Path) -> None:
+    submitted = submit_production_job(
+        ProductionJobIntent(
+            source_url="https://youtu.be/x3nrUagsaV4",
+            originating_task="codex-task-123",
+        ),
+        workspace=tmp_path,
+        submitted_at=datetime(2026, 7, 19, 8, 0, tzinfo=UTC),
+    )
+    start = Barrier(2)
+
+    def acquire(worker_id: str) -> str:
+        start.wait()
+        try:
+            acquire_job_lease(
+                submitted.project_dir,
+                worker_id,
+                now=datetime(2026, 7, 19, 8, 1, tzinfo=UTC),
+            )
+        except LeaseUnavailable:
+            return "unavailable"
+        return "acquired"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = sorted(executor.map(acquire, ("worker-a", "worker-b")))
+
+    assert outcomes == ["acquired", "unavailable"]
+    assert load_project(submitted.project_dir)["production_job"]["lease"]["worker_id"] in {
+        "worker-a",
+        "worker-b",
+    }
 
 
 def test_worker_stops_at_one_hash_bound_lyrics_review_without_duplicate_effects(
@@ -203,6 +256,7 @@ def test_worker_stops_at_one_hash_bound_lyrics_review_without_duplicate_effects(
     assert adapter.effect_counts == {"prepare-lyrics-review": 1}
     assert len(first["production_job"]["side_effect_ledger"]) == 1
     assert first["production_job"]["side_effect_ledger"][0]["status"] == "completed"
+    assert first["review_gates"]["rights"] == "pending"
 
     events = list_outbox_events(submitted.project_dir)
     assert len(events) == 1
@@ -300,6 +354,46 @@ def test_review_reply_is_hash_bound_consumed_once_and_rejects_unrelated_ok(
     assert manifest["review_gates"]["lyrics"] == "approved"
 
 
+def test_concurrent_review_reply_redelivery_is_consumed_only_once(tmp_path: Path) -> None:
+    submitted = submit_production_job(
+        ProductionJobIntent(
+            source_url="https://youtu.be/x3nrUagsaV4",
+            originating_task="codex-task-123",
+        ),
+        workspace=tmp_path,
+        submitted_at=datetime(2026, 7, 19, 8, 0, tzinfo=UTC),
+    )
+    reviewed = run_production_job(
+        submitted.project_dir,
+        SyntheticProductionAdapter(),
+        worker_id="worker-a",
+        now=datetime(2026, 7, 19, 8, 5, tzinfo=UTC),
+    )
+    pending = reviewed["production_job"]["pending_review"]
+    reply = ReviewReplyIntent(
+        reply_id="reply-concurrent-001",
+        originating_task="codex-task-123",
+        review_id=pending["review_id"],
+        displayed_hashes=tuple(pending["displayed_hashes"]),
+        outbox_cursor=pending["outbox_cursor"],
+        response="ok",
+        received_at=datetime(2026, 7, 19, 8, 6, tzinfo=UTC),
+    )
+    start = Barrier(2)
+
+    def redeliver() -> str:
+        start.wait()
+        return submit_review_reply(submitted.project_dir, reply)["status"]
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        statuses = sorted(executor.map(lambda _: redeliver(), range(2)))
+
+    assert statuses == ["already-consumed", "consumed"]
+    job = load_project(submitted.project_dir)["production_job"]
+    assert job["consumed_reply_ids"] == [reply.reply_id]
+    assert len(job["review_replies"]) == 1
+
+
 def test_outbox_acknowledgement_is_durable_and_replay_safe(tmp_path: Path) -> None:
     submitted = submit_production_job(
         ProductionJobIntent(
@@ -348,6 +442,60 @@ def test_outbox_acknowledgement_is_durable_and_replay_safe(tmp_path: Path) -> No
     assert len(outbox["delivery_receipts"]) == 1
     receipt = outbox["delivery_receipts"][0]
     assert (submitted.project_dir / receipt["path"]).is_file()
+
+
+def test_outbox_acknowledgement_adopts_a_receipt_after_manifest_save_loss(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    submitted = submit_production_job(
+        ProductionJobIntent(
+            source_url="https://youtu.be/x3nrUagsaV4",
+            originating_task="codex-task-123",
+        ),
+        workspace=tmp_path,
+        submitted_at=datetime(2026, 7, 19, 8, 0, tzinfo=UTC),
+    )
+    run_production_job(
+        submitted.project_dir,
+        SyntheticProductionAdapter(),
+        worker_id="worker-a",
+        now=datetime(2026, 7, 19, 8, 5, tzinfo=UTC),
+    )
+    event = list_outbox_events(submitted.project_dir)[0]
+    real_save = production_module.save_project
+    failed = False
+
+    def lose_manifest_save(project_dir: Path, manifest: dict) -> None:
+        nonlocal failed
+        receipts = manifest.get("production_job", {}).get("review_outbox", {}).get(
+            "delivery_receipts",
+            [],
+        )
+        if not failed and receipts:
+            failed = True
+            raise OSError("simulated crash after the immutable receipt write")
+        real_save(project_dir, manifest)
+
+    monkeypatch.setattr(production_module, "save_project", lose_manifest_save)
+    first_ack_at = datetime(2026, 7, 19, 8, 5, 30, tzinfo=UTC)
+    with pytest.raises(OSError):
+        acknowledge_outbox_event(
+            submitted.project_dir,
+            event["event_id"],
+            originating_task="codex-task-123",
+            acknowledged_at=first_ack_at,
+        )
+
+    recovered = acknowledge_outbox_event(
+        submitted.project_dir,
+        event["event_id"],
+        originating_task="codex-task-123",
+        acknowledged_at=datetime(2026, 7, 19, 8, 6, tzinfo=UTC),
+    )
+    assert recovered["status"] == "acknowledged"
+    assert recovered["receipt"]["acknowledged_at"] == first_ack_at.isoformat()
+    assert load_project(submitted.project_dir)["production_job"]["review_outbox"]["cursor"] == 1
 
 
 def test_approved_job_reaches_one_deduplicated_delivery_review_after_restart(
@@ -470,43 +618,12 @@ def test_cli_drives_the_public_synthetic_production_lifecycle(
     delivered = json.loads(capsys.readouterr().out)
     assert delivered["production_job"]["state"] == "delivery-review-ready"
     assert len(delivered["production_job"]["side_effect_ledger"]) == 2
+    assert delivered["review_gates"]["edit"] == "pending"
 
 
 def test_worker_recovers_an_idempotent_external_effect_after_response_loss(
     tmp_path: Path,
 ) -> None:
-    class ResponseLossAdapter:
-        def __init__(self) -> None:
-            self.calls = 0
-            self.remote_creations = 0
-            self.result: dict | None = None
-
-        def prepare_lyrics_review(self, request: dict, *, idempotency_key: str) -> dict:
-            self.calls += 1
-            if self.result is None:
-                self.remote_creations += 1
-                self.result = {
-                    "schema_version": 1,
-                    "kind": "concert-lyrics-review",
-                    "displayed_hashes": ["a" * 64],
-                    "tracks": [{
-                        "track_id": "001-response-loss",
-                        "title": "Response Loss",
-                        "lyrics_packet_sha256": "a" * 64,
-                    }],
-                }
-                raise ConnectionError("response lost after the external service persisted the result")
-            return self.result
-
-        def create_verified_delivery(
-            self,
-            request: dict,
-            approved_hashes: list[str],
-            *,
-            idempotency_key: str,
-        ) -> dict:
-            raise AssertionError("delivery is not part of this recovery slice")
-
     submitted = submit_production_job(
         ProductionJobIntent(
             source_url="https://youtu.be/x3nrUagsaV4",
@@ -515,25 +632,73 @@ def test_worker_recovers_an_idempotent_external_effect_after_response_loss(
         workspace=tmp_path,
         submitted_at=datetime(2026, 7, 19, 8, 0, tzinfo=UTC),
     )
-    adapter = ResponseLossAdapter()
+    fake_service = tmp_path / "external-fake-service"
+    first_process = SyntheticProductionAdapter(
+        state_dir=fake_service,
+        lose_response_once={"prepare-lyrics-review"},
+    )
 
     with pytest.raises(ConnectionError):
         run_production_job(
             submitted.project_dir,
-            adapter,
+            first_process,
             worker_id="worker-a",
             now=datetime(2026, 7, 19, 8, 5, tzinfo=UTC),
         )
+    restarted_process = SyntheticProductionAdapter(state_dir=fake_service)
     recovered = run_production_job(
         submitted.project_dir,
-        adapter,
+        restarted_process,
         worker_id="worker-b",
         now=datetime(2026, 7, 19, 8, 6, tzinfo=UTC),
     )
 
     assert recovered["production_job"]["state"] == "awaiting-lyrics-review"
-    assert adapter.calls == 2
-    assert adapter.remote_creations == 1
+    assert first_process.effect_counts == {"prepare-lyrics-review": 1}
+    assert restarted_process.effect_counts == {}
+    assert len(list(fake_service.glob("*.json"))) == 1
     assert len(recovered["production_job"]["retry_evidence"]) == 1
     assert recovered["production_job"]["side_effect_ledger"][0]["attempts"] == 2
+    assert len(list_outbox_events(submitted.project_dir)) == 1
+
+
+def test_worker_adopts_an_orphaned_outbox_event_after_manifest_save_loss(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    submitted = submit_production_job(
+        ProductionJobIntent(
+            source_url="https://youtu.be/x3nrUagsaV4",
+            originating_task="codex-task-123",
+        ),
+        workspace=tmp_path,
+        submitted_at=datetime(2026, 7, 19, 8, 0, tzinfo=UTC),
+    )
+    real_save = production_module.save_project
+    failed = False
+
+    def lose_manifest_save(project_dir: Path, manifest: dict) -> None:
+        nonlocal failed
+        job = manifest.get("production_job", {})
+        if not failed and job.get("state") == "awaiting-lyrics-review" and job["review_outbox"]["events"]:
+            failed = True
+            raise OSError("simulated crash after the immutable outbox write")
+        real_save(project_dir, manifest)
+
+    monkeypatch.setattr(production_module, "save_project", lose_manifest_save)
+    with pytest.raises(OSError):
+        run_production_job(
+            submitted.project_dir,
+            SyntheticProductionAdapter(),
+            worker_id="worker-a",
+            now=datetime(2026, 7, 19, 8, 5, tzinfo=UTC),
+        )
+
+    recovered = run_production_job(
+        submitted.project_dir,
+        SyntheticProductionAdapter(),
+        worker_id="worker-b",
+        now=datetime(2026, 7, 19, 8, 6, tzinfo=UTC),
+    )
+    assert recovered["production_job"]["state"] == "awaiting-lyrics-review"
     assert len(list_outbox_events(submitted.project_dir)) == 1

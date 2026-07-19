@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import re
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from importlib import resources
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import IO, Iterator, Literal, Protocol
 from urllib.parse import parse_qs, urlparse
 
 from .project import (
@@ -29,6 +32,15 @@ YOUTUBE_HOSTS = {
     "youtube.com",
 }
 YOUTUBE_VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{6,64}")
+TRACER_TOOLCHAIN_RELEASE = {
+    "id": "concert-v1-tracer@1.0.0",
+    "components": {
+        "production_job_schema": 1,
+        "synthetic_adapter_contract": 1,
+    },
+}
+QUALITY_REGISTRY_ID = "concert-v1-quality@1.0.0"
+QUALITY_REGISTRY_REPO_PATH = Path("docs/quality/concert-v1-quality-registry.md")
 
 
 class LeaseUnavailable(RuntimeError):
@@ -85,15 +97,45 @@ class ProductionAdapter(Protocol):
 class SyntheticProductionAdapter:
     """Deterministic fake used by the lifecycle tracer and public CLI smoke."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        state_dir: Path | None = None,
+        lose_response_once: set[str] | None = None,
+    ) -> None:
         self._results: dict[str, dict] = {}
         self.effect_counts: dict[str, int] = {}
+        self.state_dir = state_dir.expanduser().resolve() if state_dir else None
+        self._lose_response_once = set(lose_response_once or ())
+        if self.state_dir:
+            self.state_dir.mkdir(parents=True, exist_ok=True)
 
     def _once(self, kind: str, idempotency_key: str, payload: dict) -> dict:
-        if idempotency_key not in self._results:
+        created = False
+        if self.state_dir:
+            result_path = self.state_dir / (
+                hashlib.sha256(idempotency_key.encode()).hexdigest() + ".json"
+            )
+            if result_path.exists():
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+            else:
+                write_immutable_json(result_path, payload)
+                result = payload
+                created = True
+        elif idempotency_key in self._results:
+            result = self._results[idempotency_key]
+        else:
             self._results[idempotency_key] = payload
+            result = payload
+            created = True
+        if created:
             self.effect_counts[kind] = self.effect_counts.get(kind, 0) + 1
-        return self._results[idempotency_key]
+            if kind in self._lose_response_once:
+                self._lose_response_once.remove(kind)
+                raise ConnectionError(
+                    "response lost after the synthetic external service persisted the result"
+                )
+        return result
 
     def prepare_lyrics_review(self, request: dict, *, idempotency_key: str) -> dict:
         packet_sha = hashlib.sha256(
@@ -157,6 +199,42 @@ def _canonical_json(payload: object) -> bytes:
     return (json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 
+@contextmanager
+def _production_job_lock(project_dir: Path) -> Iterator[IO[str]]:
+    lock_path = project_dir.expanduser().resolve() / ".production-job.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield handle
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _quality_registry_pin() -> dict:
+    checkout_path = Path(__file__).resolve().parents[2] / QUALITY_REGISTRY_REPO_PATH
+    if checkout_path.is_file():
+        content = checkout_path.read_bytes()
+    else:
+        content = resources.files("roy_ai_editor").joinpath(
+            "resources",
+            "quality",
+            "concert-v1-quality-registry.md",
+        ).read_bytes()
+    return {
+        "id": QUALITY_REGISTRY_ID,
+        "path": QUALITY_REGISTRY_REPO_PATH.as_posix(),
+        "sha256": hashlib.sha256(content).hexdigest(),
+    }
+
+
+def _toolchain_release_pin() -> dict:
+    return {
+        **TRACER_TOOLCHAIN_RELEASE,
+        "sha256": hashlib.sha256(_canonical_json(TRACER_TOOLCHAIN_RELEASE)).hexdigest(),
+    }
+
+
 def _normalize_intent(intent: ProductionJobIntent) -> tuple[CanonicalYoutubeSource, dict]:
     source = canonicalize_youtube_url(intent.source_url)
     if intent.selection_mode not in {"all", "selected"}:
@@ -185,8 +263,34 @@ def submit_production_job(
     identity_sha = hashlib.sha256(_canonical_json(identity_payload)).hexdigest()
     job_id = f"job-{identity_sha[:16]}"
     project_id = f"{source.video_id}-{identity_sha[:12]}"
-    project_dir, manifest = create_project(source.canonical_url, workspace, project_id=project_id)
-    timestamp = (submitted_at or datetime.now(UTC)).astimezone(UTC).isoformat()
+    project_dir, _ = create_project(source.canonical_url, workspace, project_id=project_id)
+    with _production_job_lock(project_dir):
+        manifest = load_project(project_dir)
+        return _persist_production_submission(
+            project_dir,
+            manifest,
+            intent,
+            source,
+            identity_payload,
+            identity_sha,
+            job_id,
+            submitted_at,
+        )
+
+
+def _persist_production_submission(
+    project_dir: Path,
+    manifest: dict,
+    intent: ProductionJobIntent,
+    source: CanonicalYoutubeSource,
+    identity_payload: dict,
+    identity_sha: str,
+    job_id: str,
+    submitted_at: datetime | None,
+) -> ProductionSubmission:
+    timestamp = _utc_now(submitted_at).isoformat()
+    toolchain_release = _toolchain_release_pin()
+    quality_registry = _quality_registry_pin()
     request_payload = {
         "schema_version": 1,
         "job_id": job_id,
@@ -196,6 +300,14 @@ def submit_production_job(
         "track_selection": identity_payload["track_selection"],
         "profile_id": identity_payload["profile_id"],
         "originating_task": intent.originating_task.strip(),
+        "intake_authorization": {
+            "authorization_version": 1,
+            "granted_via": "source-url-submission",
+            "scope": ["local-processing", "private-youtube-upload"],
+            "granted_at": timestamp,
+        },
+        "toolchain_release": toolchain_release,
+        "quality_registry": quality_registry,
         "submitted_at": timestamp,
     }
     request_sha = hashlib.sha256(_canonical_json(request_payload)).hexdigest()
@@ -213,11 +325,17 @@ def submit_production_job(
         "identity_sha256": identity_sha,
         "originating_task": intent.originating_task.strip(),
         "profile_id": identity_payload["profile_id"],
+        "toolchain_release": toolchain_release,
+        "quality_registry": quality_registry,
         "source_video_id": source.video_id,
         "track_selection": identity_payload["track_selection"],
         "state": "queued",
         "lease": None,
-        "lease_policy": {"heartbeat_seconds": 15, "ttl_seconds": 60},
+        "lease_policy": {
+            "policy_version": 1,
+            "heartbeat_seconds": 15,
+            "ttl_seconds": 60,
+        },
         "checkpoints": [],
         "retry_evidence": [],
         "requests": [],
@@ -234,6 +352,10 @@ def submit_production_job(
     })
     if production_job.get("identity_sha256") != identity_sha:
         raise RuntimeError("Production Job identity conflicts with the existing Media Project")
+    if production_job.get("toolchain_release") != toolchain_release:
+        raise RuntimeError("Production Job is pinned to a different Toolchain Release")
+    if production_job.get("quality_registry") != quality_registry:
+        raise RuntimeError("Production Job is pinned to a different Concert V1 Quality Registry")
     if not any(item["id"] == request_reference["id"] for item in production_job["requests"]):
         production_job["requests"].append(request_reference)
         manifest.setdefault("evidence_artifacts", []).append(request_reference)
@@ -254,6 +376,17 @@ def acquire_job_lease(
     *,
     now: datetime | None = None,
 ) -> dict:
+    project_dir = project_dir.expanduser().resolve()
+    with _production_job_lock(project_dir):
+        return _acquire_job_lease_unlocked(project_dir, worker_id, now=now)
+
+
+def _acquire_job_lease_unlocked(
+    project_dir: Path,
+    worker_id: str,
+    *,
+    now: datetime | None = None,
+) -> dict:
     if not worker_id.strip():
         raise ValueError("worker_id must not be blank")
     current_time = _utc_now(now)
@@ -263,7 +396,7 @@ def acquire_job_lease(
     checkpoint_kind = "lease-acquired"
     if current:
         if current["worker_id"] == worker_id:
-            return heartbeat_job_lease(project_dir, worker_id, now=current_time)
+            return _heartbeat_job_lease_unlocked(project_dir, worker_id, now=current_time)
         heartbeat_at = datetime.fromisoformat(current["heartbeat_at"])
         ttl = timedelta(seconds=int(job["lease_policy"]["ttl_seconds"]))
         if current_time < heartbeat_at + ttl:
@@ -296,6 +429,17 @@ def heartbeat_job_lease(
     *,
     now: datetime | None = None,
 ) -> dict:
+    project_dir = project_dir.expanduser().resolve()
+    with _production_job_lock(project_dir):
+        return _heartbeat_job_lease_unlocked(project_dir, worker_id, now=now)
+
+
+def _heartbeat_job_lease_unlocked(
+    project_dir: Path,
+    worker_id: str,
+    *,
+    now: datetime | None = None,
+) -> dict:
     current_time = _utc_now(now)
     manifest = load_project(project_dir)
     job = manifest["production_job"]
@@ -310,6 +454,12 @@ def heartbeat_job_lease(
 
 
 def release_job_lease(project_dir: Path, worker_id: str) -> None:
+    project_dir = project_dir.expanduser().resolve()
+    with _production_job_lock(project_dir):
+        _release_job_lease_unlocked(project_dir, worker_id)
+
+
+def _release_job_lease_unlocked(project_dir: Path, worker_id: str) -> None:
     manifest = load_project(project_dir)
     job = manifest["production_job"]
     lease = job.get("lease")
@@ -392,6 +542,26 @@ def _run_adapter_effect(
     return result, reference
 
 
+def _adopt_or_write_immutable_json(
+    path: Path,
+    payload: dict,
+    *,
+    retry_variant_fields: tuple[str, ...] = (),
+) -> tuple[dict, str]:
+    if not path.exists():
+        return payload, write_immutable_json(path, payload)
+    existing_bytes = path.read_bytes()
+    existing = json.loads(existing_bytes)
+    expected_stable = dict(payload)
+    existing_stable = dict(existing)
+    for field in retry_variant_fields:
+        expected_stable.pop(field, None)
+        existing_stable.pop(field, None)
+    if existing_stable != expected_stable:
+        raise RuntimeError(f"Immutable artifact conflicts with durable retry identity: {path}")
+    return existing, hashlib.sha256(existing_bytes).hexdigest()
+
+
 def _append_outbox_event(project_dir: Path, manifest: dict, event: dict) -> dict:
     outbox = manifest["production_job"]["review_outbox"]
     events = outbox["events"]
@@ -407,8 +577,12 @@ def _append_outbox_event(project_dir: Path, manifest: dict, event: dict) -> dict
         **event,
     }
     relative = Path("outbox") / "events" / f"{event_id}.json"
-    sha = write_immutable_json(project_dir / relative, payload)
-    reference = {**payload, "path": relative.as_posix(), "sha256": sha}
+    durable_payload, sha = _adopt_or_write_immutable_json(
+        project_dir / relative,
+        payload,
+        retry_variant_fields=("created_at",),
+    )
+    reference = {**durable_payload, "path": relative.as_posix(), "sha256": sha}
     events.append(reference)
     return reference
 
@@ -429,6 +603,22 @@ def acknowledge_outbox_event(
     acknowledged_at: datetime | None = None,
 ) -> dict:
     project_dir = project_dir.expanduser().resolve()
+    with _production_job_lock(project_dir):
+        return _acknowledge_outbox_event_unlocked(
+            project_dir,
+            event_id,
+            originating_task=originating_task,
+            acknowledged_at=acknowledged_at,
+        )
+
+
+def _acknowledge_outbox_event_unlocked(
+    project_dir: Path,
+    event_id: str,
+    *,
+    originating_task: str,
+    acknowledged_at: datetime | None = None,
+) -> dict:
     manifest = load_project(project_dir)
     outbox = manifest["production_job"]["review_outbox"]
     event = next((item for item in outbox["events"] if item["event_id"] == event_id), None)
@@ -452,13 +642,18 @@ def acknowledge_outbox_event(
         "event_sha256": event["sha256"],
     }
     relative = Path("outbox") / "receipts" / f"{event_id}.json"
-    sha = write_immutable_json(project_dir / relative, receipt_payload)
+    durable_receipt, sha = _adopt_or_write_immutable_json(
+        project_dir / relative,
+        receipt_payload,
+        retry_variant_fields=("acknowledged_at",),
+    )
     receipt = {
         "id": f"receipt-{sha[:16]}",
         "kind": "outbox-delivery-receipt",
         "event_id": event_id,
         "path": relative.as_posix(),
         "sha256": sha,
+        "acknowledged_at": durable_receipt["acknowledged_at"],
     }
     acknowledged_ids.append(event_id)
     outbox.setdefault("delivery_receipts", []).append(receipt)
@@ -476,6 +671,11 @@ def acknowledge_outbox_event(
 
 def submit_review_reply(project_dir: Path, reply: ReviewReplyIntent) -> dict:
     project_dir = project_dir.expanduser().resolve()
+    with _production_job_lock(project_dir):
+        return _submit_review_reply_unlocked(project_dir, reply)
+
+
+def _submit_review_reply_unlocked(project_dir: Path, reply: ReviewReplyIntent) -> dict:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{2,127}", reply.reply_id):
         raise ValueError("reply_id must be a stable identifier")
     received_at = _utc_now(reply.received_at)
@@ -600,7 +800,6 @@ def run_production_job(
             })
             manifest["stage"] = "lyrics-review-required"
             manifest["status"] = manifest["stage"]
-            manifest["review_gates"]["rights"] = "approved"
             save_project(project_dir, manifest)
         elif job["state"] == "lyrics-approved":
             request = _request_payload(project_dir, job)
@@ -636,7 +835,6 @@ def run_production_job(
                 "artifact_sha256": reference["sha256"],
                 "remote_video_id": result["remote_video_id"],
             })
-            manifest["review_gates"]["edit"] = "approved"
             manifest["stage"] = "delivery-review-ready"
             manifest["status"] = manifest["stage"]
             _append_outbox_event(project_dir, manifest, {

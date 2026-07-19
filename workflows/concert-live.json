@@ -5,10 +5,7 @@
   "project_schema_version": 2,
   "public_profile": "roy-public.example.json",
   "required_review_gates": [
-    "rights",
-    "lyrics",
-    "edit",
-    "publish"
+    "lyrics"
   ],
   "stages": [
     "intake",

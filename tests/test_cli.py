@@ -61,6 +61,6 @@ def test_concert_live_workflow_reads_manifest_without_inferring_approval(tmp_pat
     status = json.loads(capsys.readouterr().out)
     assert status["workflow"] == "concert-live"
     assert status["project_id"] == "x3nrUagsaV4"
-    assert status["next_gate"] == "rights"
+    assert status["next_gate"] == "lyrics"
     assert status["approved_deliverables"] == []
     assert status["public_profile"] == "roy-public-example"
