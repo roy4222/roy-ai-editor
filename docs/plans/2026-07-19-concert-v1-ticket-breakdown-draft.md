@@ -1,8 +1,25 @@
-# Concert V1 ticket breakdown — draft for review
+# Concert V1 ticket breakdown — publication record
 
 Parent: [Issue #18](https://github.com/roy4222/roy-ai-editor/issues/18)
-Status: draft only; no child Issues have been published
-Gates: FABle architecture/ticket review, then Roy approval of granularity and blocking edges
+Status: published as Issues #19–#30 on 2026-07-19
+Gates: FABle `PASS FOR TICKET APPROVAL`; Roy approved granularity, Ticket 9 placement, and blocking edges
+
+## Published Issues
+
+| Ticket | GitHub Issue |
+| --- | --- |
+| 1 | [#19](https://github.com/roy4222/roy-ai-editor/issues/19) |
+| 2 | [#20](https://github.com/roy4222/roy-ai-editor/issues/20) |
+| 3 | [#21](https://github.com/roy4222/roy-ai-editor/issues/21) |
+| 4 | [#22](https://github.com/roy4222/roy-ai-editor/issues/22) |
+| 5 | [#23](https://github.com/roy4222/roy-ai-editor/issues/23) |
+| 6 | [#24](https://github.com/roy4222/roy-ai-editor/issues/24) |
+| 7 | [#25](https://github.com/roy4222/roy-ai-editor/issues/25) |
+| 8 | [#26](https://github.com/roy4222/roy-ai-editor/issues/26) |
+| 9 | [#27](https://github.com/roy4222/roy-ai-editor/issues/27) |
+| 10 | [#28](https://github.com/roy4222/roy-ai-editor/issues/28) |
+| 11 | [#29](https://github.com/roy4222/roy-ai-editor/issues/29) |
+| 12 | [#30](https://github.com/roy4222/roy-ai-editor/issues/30) |
 
 ## Slicing rules
 
@@ -133,8 +150,8 @@ flowchart LR
   T11 --> T12
 ```
 
-## Review questions before publication
+## Approved review decisions
 
-1. Are tickets 4–6 the right granularity, or should source-subtitle handling remain inside the first verified-render ticket?
-2. Should retention/recovery remain ticket 9, or move ahead of real private publishing even though ticket 2 already enforces volume identity and the 25 GiB floor?
-3. Are the blocking edges conservative enough to prevent production claims while still allowing tickets 3, 4, 7, and 9 to progress in parallel after their true prerequisites?
+1. Tickets 4–6 remain separate because their normal-render, source-subtitle and multi-track/resource fixture boundaries are independently verifiable.
+2. Retention/recovery remains Ticket 9 after private publishing because permanent-deletion preflight requires remote playability evidence; Ticket 2 provides the interim 25 GiB floor.
+3. The dependency graph is accepted. Ticket 3 remains one Issue with ordered milestone 3A (enforced capture) before 3B (research/review), avoiding a thirteenth Issue while containing implementation risk.
