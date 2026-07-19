@@ -395,8 +395,6 @@ def _acquire_job_lease_unlocked(
     current = job.get("lease")
     checkpoint_kind = "lease-acquired"
     if current:
-        if current["worker_id"] == worker_id:
-            return _heartbeat_job_lease_unlocked(project_dir, worker_id, now=current_time)
         heartbeat_at = datetime.fromisoformat(current["heartbeat_at"])
         ttl = timedelta(seconds=int(job["lease_policy"]["ttl_seconds"]))
         if current_time < heartbeat_at + ttl:
@@ -427,7 +425,7 @@ def heartbeat_job_lease(
     project_dir: Path,
     worker_id: str,
     *,
-    generation: int | None = None,
+    generation: int,
     now: datetime | None = None,
 ) -> dict:
     project_dir = project_dir.expanduser().resolve()
@@ -444,7 +442,7 @@ def _heartbeat_job_lease_unlocked(
     project_dir: Path,
     worker_id: str,
     *,
-    generation: int | None = None,
+    generation: int,
     now: datetime | None = None,
 ) -> dict:
     current_time = _utc_now(now)

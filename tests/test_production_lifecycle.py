@@ -170,6 +170,7 @@ def test_job_lease_takeover_requires_ttl_after_the_unchanged_durable_heartbeat(
     heartbeat_job_lease(
         submitted.project_dir,
         "worker-a",
+        generation=first["generation"],
         now=datetime(2026, 7, 19, 8, 1, 30, tzinfo=UTC),
     )
     with pytest.raises(LeaseUnavailable):
@@ -223,6 +224,44 @@ def test_concurrent_workers_cannot_both_acquire_the_job_lease(tmp_path: Path) ->
     }
 
 
+def test_same_worker_label_restart_requires_ttl_and_gets_a_new_generation(
+    tmp_path: Path,
+) -> None:
+    submitted = submit_production_job(
+        ProductionJobIntent(
+            source_url="https://youtu.be/x3nrUagsaV4",
+            originating_task="codex-task-123",
+        ),
+        workspace=tmp_path,
+        submitted_at=datetime(2026, 7, 19, 8, 0, tzinfo=UTC),
+    )
+    first = acquire_job_lease(
+        submitted.project_dir,
+        "launchd-worker",
+        now=datetime(2026, 7, 19, 8, 1, tzinfo=UTC),
+    )
+    with pytest.raises(LeaseUnavailable):
+        acquire_job_lease(
+            submitted.project_dir,
+            "launchd-worker",
+            now=datetime(2026, 7, 19, 8, 1, 59, tzinfo=UTC),
+        )
+
+    restarted = acquire_job_lease(
+        submitted.project_dir,
+        "launchd-worker",
+        now=datetime(2026, 7, 19, 8, 2, tzinfo=UTC),
+    )
+    assert restarted["generation"] == first["generation"] + 1
+    with pytest.raises(LeaseUnavailable):
+        heartbeat_job_lease(
+            submitted.project_dir,
+            "launchd-worker",
+            generation=first["generation"],
+            now=datetime(2026, 7, 19, 8, 2, 1, tzinfo=UTC),
+        )
+
+
 def test_resumed_stale_worker_is_fenced_after_lease_takeover(tmp_path: Path) -> None:
     started = Event()
     resume = Event()
@@ -252,14 +291,14 @@ def test_resumed_stale_worker_is_fenced_after_lease_takeover(tmp_path: Path) -> 
             run_production_job,
             submitted.project_dir,
             stale_adapter,
-            worker_id="worker-a",
+            worker_id="launchd-worker",
             now=datetime(2026, 7, 19, 8, 5, tzinfo=UTC),
         )
         assert started.wait(timeout=5)
         taken_over = run_production_job(
             submitted.project_dir,
             takeover_adapter,
-            worker_id="worker-b",
+            worker_id="launchd-worker",
             now=datetime(2026, 7, 19, 8, 6, tzinfo=UTC),
         )
         resume.set()
